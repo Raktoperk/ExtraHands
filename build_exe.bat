@@ -1,0 +1,1 @@
+pyinstaller --onefile --noconsole --add-data "keys/*.png;keys" --add-data "icon.ico;." --icon=icon.ico --name "Extra Hands" --distpath Extra_Hands main.py

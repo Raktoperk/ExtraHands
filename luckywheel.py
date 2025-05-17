@@ -3,6 +3,7 @@ import pyautogui
 import time
 import keyboard as key
 from threading import Thread
+from styles import button_style, label_style, entry_style, MAIN_BG
 
 class LuckyWheelApp:
     def __init__(self, root):
@@ -10,42 +11,17 @@ class LuckyWheelApp:
         self.root.title("Колесо удачи")
         self.root.geometry("500x300")
         self.root.resizable(False, False)
+        self.root.configure(bg=MAIN_BG)
 
         self.running = False
 
-        # Стили для кнопок, полей ввода и меток
-        button_style = {
-            "font": ("Arial", 12),
-            "bg": "#1E90FF",
-            "fg": "white",
-            "activebackground": "#4682B9",
-            "activeforeground": "white",
-            "bd": 0,
-            "padx": 20,
-            "pady": 10,
-            "relief": "flat",
-            "width": 15
-        }
-
-        entry_style = {
-            "font": ("Arial", 12),
-            "relief": "solid",
-            "bd": 1,
-            "width": 20,
-        }
-
-        label_style = {
-            "font": ("Arial", 12),
-            "fg": "black"
-        }
-
         # Поля для ввода часов и минут
         tk.Label(root, text="Введите количество часов (от 0 до 4):", **label_style).pack()
-        self.hours_entry = tk.Entry(root, **entry_style)
+        self.hours_entry = tk.Entry(root, **entry_style, width=20)
         self.hours_entry.pack()
 
         tk.Label(root, text="Введите количество минут (от 0 до 59):", **label_style).pack()
-        self.minutes_entry = tk.Entry(root, **entry_style)
+        self.minutes_entry = tk.Entry(root, **entry_style, width=20)
         self.minutes_entry.pack()
 
         # Кнопка запуска/остановки
@@ -62,7 +38,7 @@ class LuckyWheelApp:
         self.resolution_label.pack()
 
         # Контейнер для кнопок разрешения
-        resolution_frame = tk.Frame(root)
+        resolution_frame = tk.Frame(root, bg=MAIN_BG)
         resolution_frame.pack(pady=5)
 
         # Кнопки для выбора разрешения

@@ -7,56 +7,51 @@ import cv2
 import numpy as np
 import tkinter as tk
 from PIL import ImageGrab
+from styles import button_style, label_style, entry_style, MAIN_BG
 
 class BuilderApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Стройка")
-        self.root.geometry("300x200")  # Увеличили высоту окна для нового поля
+        self.root.geometry("500x250")
         self.root.resizable(False, False)
+        self.root.configure(bg=MAIN_BG)
         
         self.running = False
-        self.resolution_mode = "FullHD"  # По умолчанию FullHD
-        self.delay_between_presses = 120  # Задержка по умолчанию в мс
+        self.resolution_mode = "FullHD"
+        self.delay_between_presses = 120
         self.green_pixel_coords = {
             "FullHD": (765, 496),
             "QuadHD": (1084, 674)
         }
 
-        # Стили для элементов
-        button_style = {
-            "font": ("Arial", 10),
-            "bg": "#1E90FF",
-            "fg": "white",
-            "activebackground": "#4682B9",
-            "activeforeground": "white",
-            "bd": 0,
-            "padx": 10,
-            "pady": 5,
-            "relief": "flat",
-            "width": 10
-        }
-
-        label_style = {
-            "font": ("Arial", 12),
-            "fg": "black"
-        }
-
         # Метка состояния
-        self.status_label = tk.Label(root, text="Состояние: Не активно", **label_style)
+        self.status_label = tk.Label(
+            root, 
+            text="Состояние: Не активно", 
+            **label_style
+        )
         self.status_label.pack(pady=5)
 
         # Frame для поля ввода задержки
-        delay_frame = tk.Frame(root)
+        delay_frame = tk.Frame(root, bg=MAIN_BG)
         delay_frame.pack(pady=5)
         
-        tk.Label(delay_frame, text="Задержка (мс):", **label_style).pack(side=tk.LEFT)
+        tk.Label(
+            delay_frame, 
+            text="Задержка (мс):", 
+            **label_style
+        ).pack(side=tk.LEFT)
         
-        self.delay_entry = tk.Entry(delay_frame, width=10)
+        self.delay_entry = tk.Entry(
+            delay_frame, 
+            **entry_style,
+            width=7
+        )
         self.delay_entry.pack(side=tk.LEFT, padx=5)
         self.delay_entry.insert(0, str(self.delay_between_presses))
 
-        # Кнопка запуска/остановки (основная)
+        # Кнопка запуска/остановки
         self.toggle_button = tk.Button(
             root, 
             text="Запустить", 
@@ -66,11 +61,15 @@ class BuilderApp:
         self.toggle_button.pack(pady=5)
 
         # Метка текущего разрешения
-        self.resolution_label = tk.Label(root, text=f"Текущее разрешение: {self.resolution_mode}", **label_style)
+        self.resolution_label = tk.Label(
+            root, 
+            text=f"Текущее разрешение: {self.resolution_mode}", 
+            **label_style
+        )
         self.resolution_label.pack(pady=5)
 
         # Frame для кнопок смены разрешения
-        resolution_frame = tk.Frame(root)
+        resolution_frame = tk.Frame(root, bg=MAIN_BG)
         resolution_frame.pack(pady=5)
 
         # Кнопка FullHD
@@ -135,10 +134,8 @@ class BuilderApp:
                 key_code = self.get_key_code(prop)
                 if key_code:
                     print(key_code)
-                    # key.press(key_code)
-                    # time.sleep(random.uniform(0.04, 0.06))  # Конвертируем мс в секунды
-                    # key.release(key_code)
-                time.sleep(random.uniform(self.delay_between_presses / 1000 + 0.005, self.delay_between_presses / 1000 + 0.025))
+                time.sleep(random.uniform(self.delay_between_presses / 1000 + 0.005, 
+                                      self.delay_between_presses / 1000 + 0.025))
 
     def get_key_code(self, char):
         key_map = {
@@ -151,7 +148,6 @@ class BuilderApp:
     def toggle_bot(self):
         if not self.running:
             try:
-                # Получаем значение задержки из поля ввода
                 self.delay_between_presses = int(self.delay_entry.get())
                 if self.delay_between_presses < 0:
                     raise ValueError("Задержка не может быть отрицательной")

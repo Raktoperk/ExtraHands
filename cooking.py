@@ -2,134 +2,145 @@ import random
 import tkinter as tk
 import pyautogui
 import time
+from styles import cooking_button_style, button_style, label_style, entry_style, MAIN_BG
 
 class CookingBotApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Готовка")
-        self.sequence = []  # Записанная последовательность ячеек
-        self.cycle_count = tk.IntVar(value=1)  # Количество циклов, начальное значение = 1
+        self.root.geometry("790x378")
+        self.root.resizable(False, False)
+        self.root.configure(bg=MAIN_BG)
+        self.sequence = []
+        self.cycle_count = tk.IntVar(value=1)
 
-        # Стили для кнопок, полей ввода и меток
-        self.button_style = {
-            "font": ("Arial", 10),
-            "bg": "#1E90FF",  # цвет фона
-            "fg": "white",    # цвет текста
-            "activebackground": "#4682B9",  # Цвет фона при нажатии
-            "activeforeground": "white",     # Цвет текста при нажатии
-            "bd": 0,          # Без рамки
-            "padx": 5,        # Отступ по горизонтали
-            "pady": 5,        # Отступ по вертикали
-            "relief": "flat",  # Плоский стиль
-            "width": 8        # Ширина кнопки
-        }
+        # Основные элементы слева
+        left_frame = tk.Frame(root, bg=MAIN_BG)
+        left_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
 
-        self.entry_style = {
-            "font": ("Arial", 10),
-            "relief": "solid",
-            "bd": 1,
-            "width": 10,
-        }
+        # Поле ввода количества циклов
+        tk.Label(left_frame, text="Введите количество циклов:", **label_style).grid(row=0, column=0, sticky="w")
+        tk.Entry(left_frame, textvariable=self.cycle_count, **entry_style).grid(row=0, column=1, padx=5)
 
-        self.label_style = {
-            "font": ("Arial", 10),
-            "fg": "black"
-        }
+        # Кнопки инструментов
+        tools_frame = tk.Frame(left_frame, bg=MAIN_BG)
+        tools_frame.grid(row=1, column=0, columnspan=2, pady=10)
+        
+        tools = [("Нож", "knife"), ("Венчик", "whisk"), ("Огонь", "fire")]
+        for i, (text, action) in enumerate(tools):
+            tk.Button(tools_frame, text=text, command=lambda a=action: self.record_action(a), 
+                     **button_style).grid(row=0, column=i, padx=5)
 
-        # Поле ввода количества повторений цикла
-        tk.Label(root, text="Введите количество циклов:", **self.label_style).grid(row=0, column=0, sticky="w", padx=10)
-        tk.Entry(root, textvariable=self.cycle_count, **self.entry_style).grid(row=0, column=1, padx=10)
+        # Последовательность действий
+        tk.Label(left_frame, text="Записанные ячейки:", **label_style).grid(row=2, column=0, columnspan=2, sticky="w")
+        self.sequence_label = tk.Label(left_frame, text="", wraplength=300, **label_style)
+        self.sequence_label.grid(row=3, column=0, columnspan=2, sticky="w")
 
-        # Фрейм для кнопок нож, венчик, огонь
-        action_frame = tk.Frame(root)
-        action_frame.grid(row=1, column=0, columnspan=2, pady=10)
+        # Кнопки управления
+        control_frame = tk.Frame(left_frame, bg=MAIN_BG)
+        control_frame.grid(row=4, column=0, columnspan=2, pady=10)
+        
+        tk.Button(control_frame, text="Запустить", command=self.start_cooking, **button_style).grid(row=0, column=0, padx=5)
+        tk.Button(control_frame, text="Сброс", command=self.reset_sequence, **button_style).grid(row=0, column=1, padx=5)
 
-        tk.Button(action_frame, text="Нож", command=lambda: self.record_action("knife"), **self.button_style).grid(row=0, column=0, padx=5)
-        tk.Button(action_frame, text="Венчик", command=lambda: self.record_action("whisk"), **self.button_style).grid(row=0, column=1, padx=5)
-        tk.Button(action_frame, text="Огонь", command=lambda: self.record_action("fire"), **self.button_style).grid(row=0, column=2, padx=5)
+        # Строка отчета
+        self.report_label = tk.Label(left_frame, text="", **label_style)
+        self.report_label.grid(row=5, column=0, columnspan=2, pady=(0, 10))
 
-        # Строка для отображения последовательности действий
-        tk.Label(root, text="Записанные ячейки:", **self.label_style).grid(row=2, column=0, columnspan=2, sticky="w", padx=10)
-        self.sequence_label = tk.Label(root, text="", wraplength=500, **self.label_style)
-        self.sequence_label.grid(row=3, column=0, columnspan=2, padx=10)
-
-        # Фрейм для кнопок "запустить" и "сбросить"
-        button_frame = tk.Frame(root)
-        button_frame.grid(row=4, column=0, columnspan=2, pady=10)
-
-        tk.Button(button_frame, text="Запустить", command=self.start_cooking, **self.button_style).grid(row=0, column=0, padx=5)
-        tk.Button(button_frame, text="Сброс", command=self.reset_sequence, **self.button_style).grid(row=0, column=1, padx=5)
-
-        # Фрейм для кнопки "вода" и ячеек
-        grid_frame = tk.Frame(root)
-        grid_frame.grid(row=0, column=2, rowspan=5, padx=10, pady=10)
-
-        # Кнопка "вода" в первой строке
-        tk.Button(grid_frame, text="Вода", command=lambda: self.record_action("water"), **self.button_style).grid(row=0, column=0, pady=5)
+        # Вертикальная сетка ячеек справа
+        cell_frame = tk.Frame(root, bg=MAIN_BG)
+        cell_frame.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
 
         self.special_cells = {
             "knife": (686, 572),
             "whisk": (809, 572),
             "fire": (928, 572),
-            "water": (1078, 284),
+            "water": (1078, 284),  # Координаты для воды
         }
 
-        # Кнопки для ячеек с фиксированными координатами
         self.cells = {
-            "cell_0_0": (1160, 284), "cell_0_1": (1248, 284), 
-            "cell_0_2": (1078, 375), "cell_0_3": (1160, 375), "cell_0_4": (1248, 375),
-            "cell_0_5": (1078, 458), "cell_0_6": (1160, 458), "cell_1_0": (1248, 458),
-            "cell_1_1": (1078, 542), "cell_1_2": (1160, 542), "cell_1_3": (1248, 542),
-            "cell_1_4": (1078, 626), "cell_1_5": (1160, 626), "cell_1_6": (1248, 626),
-            "cell_2_0": (1078, 712), "cell_2_1": (1160, 712), "cell_2_2": (1248, 712),
-            "cell_2_3": (1078, 792), "cell_2_4": (1160, 792), "cell_2_5": (1248, 792)
+            "cell_1": (1160, 284), "cell_2": (1248, 284),
+            "cell_3": (1078, 375), "cell_4": (1160, 375), "cell_5": (1248, 375),
+            "cell_6": (1078, 458), "cell_7": (1160, 458), "cell_8": (1248, 458),
+            "cell_9": (1078, 542), "cell_10": (1160, 542), "cell_11": (1248, 542),
+            "cell_12": (1078, 626), "cell_13": (1160, 626), "cell_14": (1248, 626),
+            "cell_15": (1078, 712), "cell_16": (1160, 712), "cell_17": (1248, 712),
+            "cell_18": (1078, 792), "cell_19": (1160, 792), "cell_20": (1248, 792)
         }
 
-        # Нумерация ячеек для интерфейса
-        cell_number = 1
-        for i in range(3):
-            for j in range(7):
-                # Пропускаем ячейку с индексом 21 (cell_2_1)
-                if i == 2 and j == 6:
+        # Создаем первую строку с кнопкой "Вода" и двумя первыми ячейками
+        first_row = tk.Frame(cell_frame, bg=MAIN_BG)
+        first_row.grid(row=0, column=0, columnspan=3, sticky="ew")
+        
+        # Кнопка "Вода"
+        tk.Button(
+            first_row, 
+            text="Вода", 
+            command=lambda: self.record_action("water"), 
+            **cooking_button_style
+        ).grid(row=0, column=0, padx=5, pady=2)
+        
+        # Ячейки 1 и 2
+        for i in range(1, 3):
+            cell_key = f"cell_{i}"
+            tk.Button(
+                first_row, 
+                text=f"({i})", 
+                command=lambda k=cell_key: self.record_cell_action(k), 
+                **cooking_button_style
+            ).grid(row=0, column=i, padx=5, pady=2)
+
+        # Остальные ячейки (6 строк по 3 кнопки, включая строку с 18-20)
+        for row in range(1, 7):  # Теперь 6 строк (включая строку с 18-20)
+            for col in range(3):  # 3 колонки
+                cell_number = (row-1) * 3 + col + 3  # Нумерация с 3 до 20
+                if cell_number > 20:
                     continue
-                cell_key = f"cell_{i}_{j}"
-                cell_button_text = f"({cell_number})"
-                btn = tk.Button(grid_frame, text=cell_button_text, command=lambda key=cell_key: self.record_cell_action(key), **self.button_style)
-                btn.grid(row=i + 1, column=j, pady=2, padx=2)
-                cell_number += 1
+                cell_key = f"cell_{cell_number}"
+                btn = tk.Button(
+                    cell_frame, 
+                    text=f"({cell_number})", 
+                    command=lambda k=cell_key: self.record_cell_action(k), 
+                    **cooking_button_style
+                )
+                btn.grid(row=row, column=col, pady=2, padx=2)
+
+        # Настройка веса строк и столбцов
+        root.grid_columnconfigure(0, weight=1)
+        root.grid_columnconfigure(1, weight=1)
+        root.grid_rowconfigure(0, weight=1)
 
     def get_random_offset(self, max_offset=25):
-        """Получаем случайное смещение для имитации случайных кликов в пределах ячейки"""
         return random.randint(-max_offset, max_offset)
 
     def record_action(self, action):
-        """Запись действия в последовательность"""
         base_x, base_y = self.special_cells[action]
         coords = (base_x + self.get_random_offset(), base_y + self.get_random_offset())
         self.sequence.append((action, coords))
         self.update_sequence_display()
 
     def record_cell_action(self, cell_key):
-        """Запись действия для ячейки с координатами x и y"""
         base_x, base_y = self.cells[cell_key]
         coords = (base_x + self.get_random_offset(), base_y + self.get_random_offset())
         self.sequence.append((cell_key, coords))
         self.update_sequence_display()
 
     def update_sequence_display(self):
-        """Обновление строки с последовательностью действий"""
         sequence_text = ", ".join([f"{action}" for action, _ in self.sequence])
         self.sequence_label.config(text=sequence_text)
 
     def reset_sequence(self):
-        """Сброс последовательности действий"""
         self.sequence = []
         self.update_sequence_display()
-        print("Последовательность сброшена")
+        self.report_label.config(text="Последовательность сброшена")
 
     def start_cooking(self):
+        if not self.sequence:
+            self.report_label.config(text="Ошибка: последовательность пуста")
+            return
+            
+        self.report_label.config(text="Выполняется готовка...")
         time.sleep(5)
-        """Запуск цикла готовки на основе записанной последовательности"""
         cycles = self.cycle_count.get()
         for _ in range(cycles):
             for action, coords in self.sequence:
@@ -146,12 +157,17 @@ class CookingBotApp:
                     pyautogui.moveTo(x, y, duration=duration2)
                     pyautogui.click(button='right')
                 sleeptime = random.uniform(0.03, 0.1)
-                time.sleep(sleeptime)  # Случайная задержка между действиями
-            # Автоматический запуск готовки в конце каждого цикла
+                time.sleep(sleeptime)
             start_x, start_y = 803, 673
             pyautogui.moveTo(start_x + self.get_random_offset(), start_y + self.get_random_offset(), duration=duration3)
             pyautogui.click(button='left')
             print("Запущена готовка")
             waittime = random.uniform(4.7, 5)
             time.sleep(waittime)
+        
+        self.report_label.config(text=f"Готовка завершена! Выполнено {cycles} циклов.")
 
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = CookingBotApp(root)
+    root.mainloop()

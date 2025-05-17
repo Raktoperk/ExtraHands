@@ -2,6 +2,7 @@ import tkinter as tk
 import pyautogui
 import keyboard as key
 from threading import Thread
+from styles import button_style, label_style, MAIN_BG
 
 SCANCODES = {
     'e': 'e'
@@ -17,7 +18,8 @@ class PortApp:
 
         self.root = root
         self.root.title("Порт")
-        self.root.geometry("600x200")
+        self.root.geometry("550x220")
+        self.root.configure(bg=MAIN_BG)
         self.root.resizable(False, False)
         # self.root.iconbitmap("icon.ico")
 
@@ -25,31 +27,12 @@ class PortApp:
         self.active_resolution = "FullHD"  # По умолчанию активное разрешение
         self.green_color = (126, 211, 33)  # Зелёный цвет для поиска
 
-        # Стили для кнопок и меток
-        button_style = {
-            "font": ("Arial", 12),
-            "bg": "#1E90FF",
-            "fg": "white",
-            "activebackground": "#4682B9",
-            "activeforeground": "white",
-            "bd": 0,
-            "padx": 20,
-            "pady": 10,
-            "relief": "flat",
-            "width": 15
-        }
-
-        label_style = {
-            "font": ("Arial", 12),
-            "fg": "black"
-        }
-
         # Строка состояния
         self.status_label = tk.Label(root, text="Состояние: не активно", **label_style)
-        self.status_label.pack()
+        self.status_label.pack(pady=5)
 
         # Создание фрейма для кнопок управления
-        control_frame = tk.Frame(root)
+        control_frame = tk.Frame(root, bg=MAIN_BG)
         control_frame.pack(pady=10)
 
         # Кнопка Запустить/Остановить
@@ -61,7 +44,7 @@ class PortApp:
         self.resolution_label.pack(pady=5)
 
         # Создание фрейма для кнопок разрешения
-        resolution_frame = tk.Frame(root)
+        resolution_frame = tk.Frame(root, bg=MAIN_BG)
         resolution_frame.pack(pady=5)
 
         # Кнопка FullHD
