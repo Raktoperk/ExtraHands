@@ -135,7 +135,7 @@ class BuilderApp:
                        'f': 0x46,
                        'y': 0x59,
                        }
-            while self.running:
+            while self.running and self.check_color(x, y, (126, 211, 33)):
                 if prop in key_map:
                     ctypes.windll.user32.keybd_event(key_map[prop], 0, 0, 0)
                     time.sleep(0.05)

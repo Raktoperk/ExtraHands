@@ -72,7 +72,7 @@ class AntiafkApp:
                        }
             if key in key_map:
                 ctypes.windll.user32.keybd_event(key_map[key], 0, 0, 0)
-                time.sleep(0.05)
+                time.sleep(random.uniform(1, 5))
                 ctypes.windll.user32.keybd_event(key_map[key], 0, 2, 0)
         except:
             pass
