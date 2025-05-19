@@ -9,7 +9,7 @@ from styles import button_style, exit_button_style, MAIN_BG, label_style, entry_
 class FarmCowsApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Color Bot")
+        self.root.title("Ферма (коровник)")
         self.root.geometry("500x250")
         self.root.configure(bg=MAIN_BG)
         
