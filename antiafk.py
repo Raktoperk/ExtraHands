@@ -4,6 +4,7 @@ import keyboard as key
 import tkinter as tk
 from threading import Thread, Event
 from queue import Queue
+import ctypes
 from styles import button_style, label_style, MAIN_BG
 
 class AntiafkApp:
@@ -61,12 +62,20 @@ class AntiafkApp:
         )
         self.stop_button.pack(side=tk.LEFT, padx=10)
 
-    def press_key(self, key_char):
-        """Нажимает физическую клавишу"""
-        wait_time = random.uniform(1, 4)
-        key.press(key_char)
-        time.sleep(wait_time)
-        key.release(key_char)
+    def press_key(self, key):
+        """Безопасное нажатие клавиши через виртуальные коды"""
+        try:
+            key_map = {'w': 0x57,
+                       'a': 0x41,
+                       's': 0x53,
+                       'd': 0x44
+                       }
+            if key in key_map:
+                ctypes.windll.user32.keybd_event(key_map[key], 0, 0, 0)
+                time.sleep(0.05)
+                ctypes.windll.user32.keybd_event(key_map[key], 0, 2, 0)
+        except:
+            pass
 
     def open_phone(self):
         """Имитация открытия телефона"""

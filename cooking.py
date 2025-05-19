@@ -2,17 +2,20 @@ import random
 import tkinter as tk
 import pyautogui
 import time
+import keyboard
 from styles import cooking_button_style, button_style, label_style, entry_style, MAIN_BG
 
 class CookingBotApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Готовка")
-        self.root.geometry("790x378")
+        self.root.geometry("790x380")
         self.root.resizable(False, False)
         self.root.configure(bg=MAIN_BG)
         self.sequence = []
         self.cycle_count = tk.IntVar(value=1)
+        self.is_paused = False
+        self.should_stop = False
 
         # Основные элементы слева
         left_frame = tk.Frame(root, bg=MAIN_BG)
@@ -36,16 +39,41 @@ class CookingBotApp:
         self.sequence_label = tk.Label(left_frame, text="", wraplength=300, **label_style)
         self.sequence_label.grid(row=3, column=0, columnspan=2, sticky="w")
 
-        # Кнопки управления
+        # Горизонтальный блок кнопок управления (Запуск/Стоп и Сброс)
         control_frame = tk.Frame(left_frame, bg=MAIN_BG)
-        control_frame.grid(row=4, column=0, columnspan=2, pady=10)
+        control_frame.grid(row=4, column=0, columnspan=2, pady=(10, 5))
         
-        tk.Button(control_frame, text="Запустить", command=self.start_cooking, **button_style).grid(row=0, column=0, padx=5)
-        tk.Button(control_frame, text="Сброс", command=self.reset_sequence, **button_style).grid(row=0, column=1, padx=5)
+        # Кнопка Запустить/Стоп (слева)
+        self.start_stop_btn = tk.Button(
+            control_frame, 
+            text="Запустить", 
+            command=self.toggle_cooking, 
+            **button_style
+        )
+        self.start_stop_btn.pack(side=tk.LEFT, padx=(0, 5))
+        
+        # Кнопка Сброс (справа)
+        tk.Button(
+            control_frame, 
+            text="Сброс", 
+            command=self.reset_sequence, 
+            **button_style
+        ).pack(side=tk.LEFT)
+
+        # Информация о паузе
+        pause_frame = tk.Frame(left_frame, bg=MAIN_BG)
+        pause_frame.grid(row=5, column=0, columnspan=2, pady=(5, 0))
+        
+        tk.Label(pause_frame, text="Управление паузой:", **label_style).grid(row=0, column=0, sticky="w")
+        tk.Label(pause_frame, text="F7 - продолжить", **label_style).grid(row=1, column=0, sticky="w")
+        tk.Label(pause_frame, text="F8 - пауза", **label_style).grid(row=2, column=0, sticky="w")
+        
+        self.pause_status = tk.Label(pause_frame, text="Статус: не активно", **label_style)
+        self.pause_status.grid(row=3, column=0, sticky="w")
 
         # Строка отчета
         self.report_label = tk.Label(left_frame, text="", **label_style)
-        self.report_label.grid(row=5, column=0, columnspan=2, pady=(0, 10))
+        self.report_label.grid(row=6, column=0, columnspan=2, pady=(5, 10))
 
         # Вертикальная сетка ячеек справа
         cell_frame = tk.Frame(root, bg=MAIN_BG)
@@ -55,7 +83,7 @@ class CookingBotApp:
             "knife": (686, 572),
             "whisk": (809, 572),
             "fire": (928, 572),
-            "water": (1078, 284),  # Координаты для воды
+            "water": (1078, 284),
         }
 
         self.cells = {
@@ -90,10 +118,10 @@ class CookingBotApp:
                 **cooking_button_style
             ).grid(row=0, column=i, padx=5, pady=2)
 
-        # Остальные ячейки (6 строк по 3 кнопки, включая строку с 18-20)
-        for row in range(1, 7):  # Теперь 6 строк (включая строку с 18-20)
-            for col in range(3):  # 3 колонки
-                cell_number = (row-1) * 3 + col + 3  # Нумерация с 3 до 20
+        # Остальные ячейки
+        for row in range(1, 7):
+            for col in range(3):
+                cell_number = (row-1) * 3 + col + 3
                 if cell_number > 20:
                     continue
                 cell_key = f"cell_{cell_number}"
@@ -109,6 +137,10 @@ class CookingBotApp:
         root.grid_columnconfigure(0, weight=1)
         root.grid_columnconfigure(1, weight=1)
         root.grid_rowconfigure(0, weight=1)
+
+        # Регистрируем горячие клавиши
+        keyboard.add_hotkey('F8', self.pause_cooking)
+        keyboard.add_hotkey('F7', self.resume_cooking)
 
     def get_random_offset(self, max_offset=25):
         return random.randint(-max_offset, max_offset)
@@ -134,38 +166,100 @@ class CookingBotApp:
         self.update_sequence_display()
         self.report_label.config(text="Последовательность сброшена")
 
+    def pause_cooking(self):
+        if not self.is_paused and hasattr(self, 'cooking_in_progress') and self.cooking_in_progress:
+            self.is_paused = True
+            self.pause_status.config(text="Статус: на паузе")
+            self.report_label.config(text="Готовка приостановлена (F7 - продолжить)")
+
+    def resume_cooking(self):
+        if self.is_paused and hasattr(self, 'cooking_in_progress') and self.cooking_in_progress:
+            self.is_paused = False
+            self.pause_status.config(text="Статус: активно")
+            self.report_label.config(text="Готовка продолжена")
+
+    def toggle_cooking(self):
+        if hasattr(self, 'cooking_in_progress') and self.cooking_in_progress:
+            self.stop_cooking()
+        else:
+            self.start_cooking()
+
+    def stop_cooking(self):
+        self.should_stop = True
+        self.cooking_in_progress = False
+        self.start_stop_btn.config(text="Запустить")
+        self.report_label.config(text="Готовка остановлена пользователем")
+
     def start_cooking(self):
         if not self.sequence:
             self.report_label.config(text="Ошибка: последовательность пуста")
             return
             
+        self.is_paused = False
+        self.should_stop = False
+        self.cooking_in_progress = True
+        self.start_stop_btn.config(text="Остановить")
+        self.pause_status.config(text="Статус: активно")
         self.report_label.config(text="Выполняется готовка...")
+        self.root.update()
         time.sleep(5)
+        
         cycles = self.cycle_count.get()
-        for _ in range(cycles):
+        for cycle in range(cycles):
+            if self.should_stop:
+                self.report_label.config(text=f"Готовка прервана на цикле {cycle+1} из {cycles}")
+                break
+                
+            while self.is_paused:
+                time.sleep(0.1)
+                if self.should_stop:
+                    self.report_label.config(text=f"Готовка прервана на цикле {cycle+1} из {cycles}")
+                    return
+                    
+            self.report_label.config(text=f"Цикл {cycle+1} из {cycles}...")
+            self.root.update()
+            
             for action, coords in self.sequence:
+                if self.should_stop:
+                    break
+                    
+                while self.is_paused:
+                    time.sleep(0.1)
+                    if self.should_stop:
+                        self.report_label.config(text=f"Готовка прервана на цикле {cycle+1} из {cycles}")
+                        return
+                
                 duration1 = random.uniform(0.3, 0.5)
                 duration2 = random.uniform(0.3, 0.5)
                 duration3 = random.uniform(0.3, 0.5)
+                
                 if action in self.special_cells:
-                    print(f"Наводим курсор на {action} с координатами {coords}")
                     pyautogui.moveTo(coords[0], coords[1], duration=duration1)
                     pyautogui.click(button='right')
                 elif action.startswith("cell"):
                     x, y = coords
-                    print(f"Наводим курсор на координаты ячейки ({x}, {y})")
                     pyautogui.moveTo(x, y, duration=duration2)
                     pyautogui.click(button='right')
-                sleeptime = random.uniform(0.03, 0.1)
-                time.sleep(sleeptime)
+                
+                time.sleep(random.uniform(0.03, 0.1))
+            
+            if self.should_stop:
+                break
+                
+            # Нажатие кнопки готовки
             start_x, start_y = 803, 673
             pyautogui.moveTo(start_x + self.get_random_offset(), start_y + self.get_random_offset(), duration=duration3)
             pyautogui.click(button='left')
-            print("Запущена готовка")
-            waittime = random.uniform(4.7, 5)
-            time.sleep(waittime)
-        
-        self.report_label.config(text=f"Готовка завершена! Выполнено {cycles} циклов.")
+            
+            # Увеличенное время ожидания между циклами
+            if cycle < cycles - 1:
+                time.sleep(random.uniform(5.5, 6.0))
+    
+        self.cooking_in_progress = False
+        self.start_stop_btn.config(text="Запустить")
+        if not self.should_stop:
+            self.report_label.config(text=f"Готовка завершена! Выполнено {cycles} циклов.")
+        self.pause_status.config(text="Статус: не активно")
 
 if __name__ == "__main__":
     root = tk.Tk()

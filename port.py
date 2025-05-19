@@ -1,12 +1,10 @@
 import tkinter as tk
 import pyautogui
+import time
 import keyboard as key
 from threading import Thread
+import ctypes
 from styles import button_style, label_style, MAIN_BG
-
-SCANCODES = {
-    'e': 'e'
-}
 
 class PortApp:
     def __init__(self, root):
@@ -59,12 +57,15 @@ class PortApp:
         return pyautogui.pixelMatchesColor(x, y, color)
 
     def press_key(self, key_char):
-        """Нажимает физическую клавишу по scancode (работает в любой раскладке)"""
-        scancode = SCANCODES.get(key_char.lower())
-        if scancode:
-            key.send(scancode)
-        else:
-            pyautogui.press(key_char)  # Фолбэк на обычный метод, если scancode не найден
+        """Безопасное нажатие клавиши через виртуальные коды"""
+        try:
+            key_map = {'e': 0x45}
+            if key_char in key_map:
+                ctypes.windll.user32.keybd_event(key_map[key_char], 0, 0, 0)
+                time.sleep(0.05)
+                ctypes.windll.user32.keybd_event(key_map[key_char], 0, 2, 0)
+        except:
+            pass
 
     def task(self):
         while self.running:

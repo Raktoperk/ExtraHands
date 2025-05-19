@@ -1,11 +1,11 @@
 import os
 import pyautogui
 import time
-import keyboard as key
 import random
 import cv2
 import numpy as np
 import tkinter as tk
+import ctypes
 from PIL import ImageGrab
 from styles import button_style, label_style, entry_style, MAIN_BG
 
@@ -116,11 +116,12 @@ class BuilderApp:
             print(f"Ошибка при обработке изображения: {e}")
             return None
 
+    
+
     def checkImageKey(self, prop):
         image_path = f'keys/{prop}.png'
         if not os.path.exists(image_path):
             return
-
         screenshot = ImageGrab.grab()
         screen_np = np.array(screenshot)
         screen_gray = cv2.cvtColor(screen_np, cv2.COLOR_BGR2GRAY)
@@ -130,20 +131,17 @@ class BuilderApp:
         if match_location is not None:
             time.sleep(random.uniform(0.1, 0.2))
             x, y = self.green_pixel_coords[self.resolution_mode]
-            while self.running and self.check_color(x, y, (126, 211, 33)):
-                key_code = self.get_key_code(prop)
-                if key_code:
-                    print(key_code)
+            key_map = {'e': 0x45,
+                       'f': 0x46,
+                       'y': 0x59,
+                       }
+            while self.running:
+                if prop in key_map:
+                    ctypes.windll.user32.keybd_event(key_map[prop], 0, 0, 0)
+                    time.sleep(0.05)
+                    ctypes.windll.user32.keybd_event(key_map[prop], 0, 2, 0)
                 time.sleep(random.uniform(self.delay_between_presses / 1000 + 0.005, 
                                       self.delay_between_presses / 1000 + 0.025))
-
-    def get_key_code(self, char):
-        key_map = {
-            'y': 'y',
-            'f': 'f',
-            'e': 'e',
-        }
-        return key_map.get(char.lower())
 
     def toggle_bot(self):
         if not self.running:
