@@ -7,6 +7,7 @@ from cooking import CookingBotApp
 from farmcows import FarmCowsApp
 from luckywheel import LuckyWheelApp
 from port import PortApp
+from mining import MiningBotApp
 from styles import button_style, exit_button_style, help_button_style, MAIN_BG
 
 def run_app(app_class):
@@ -33,6 +34,7 @@ apps = [
     ("Кулинария", CookingBotApp),
     ("Стройка", BuilderApp),
     ("Порт", PortApp),
+    ("Шахта", MiningBotApp),
     ("Ферма (коровы)", FarmCowsApp)
 ]
 
