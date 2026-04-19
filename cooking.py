@@ -1,267 +1,647 @@
+import sys
 import random
-import tkinter as tk
-import pyautogui
 import time
-import keyboard
-from styles import cooking_button_style, button_style, label_style, entry_style, MAIN_BG
+import logging
+from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, 
+                             QPushButton, QLabel, QFrame, QLineEdit, QGridLayout,
+                             QMessageBox, QGroupBox)
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
+from PyQt5.QtGui import QPainter, QBrush, QColor
 
-class CookingBotApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Готовка")
-        self.root.geometry("790x380")
-        self.root.resizable(False, False)
-        self.root.configure(bg=MAIN_BG)
-        self.sequence = []
-        self.cycle_count = tk.IntVar(value=1)
-        self.is_paused = False
-        self.should_stop = False
+from components.coordinates import cooking_coordinate
 
-        # Основные элементы слева
-        left_frame = tk.Frame(root, bg=MAIN_BG)
-        left_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+try:
+    from components.styles import *
+except ImportError:
+    # Запасные значения если файл стилей не найден
+    from components.styles import (
+        COLORS, WINDOW_STYLES, BUTTON_STYLES, LABEL_STYLES, 
+        CHECKBOX_STYLES, COUNTER_WINDOW_STYLES, FRAME_STYLES,
+        INPUT_STYLES, GROUPBOX_STYLES
+    )
 
-        # Поле ввода количества циклов
-        tk.Label(left_frame, text="Введите количество циклов:", **label_style).grid(row=0, column=0, sticky="w")
-        tk.Entry(left_frame, textvariable=self.cycle_count, **entry_style).grid(row=0, column=1, padx=5)
+# Настройка логирования
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 
-        # Кнопки инструментов
-        tools_frame = tk.Frame(left_frame, bg=MAIN_BG)
-        tools_frame.grid(row=1, column=0, columnspan=2, pady=10)
+class CounterWindow(QWidget):
+    """Маленькое окно счетчика поверх всех окон"""
+    def __init__(self):
+        super().__init__()
+        self.counter = 0
+        self.initUI()
         
-        tools = [("Нож", "knife"), ("Венчик", "whisk"), ("Огонь", "fire")]
-        for i, (text, action) in enumerate(tools):
-            tk.Button(tools_frame, text=text, command=lambda a=action: self.record_action(a), 
-                     **button_style).grid(row=0, column=i, padx=5)
-
-        # Последовательность действий
-        tk.Label(left_frame, text="Записанные ячейки:", **label_style).grid(row=2, column=0, columnspan=2, sticky="w")
-        self.sequence_label = tk.Label(left_frame, text="", wraplength=300, **label_style)
-        self.sequence_label.grid(row=3, column=0, columnspan=2, sticky="w")
-
-        # Горизонтальный блок кнопок управления (Запуск/Стоп и Сброс)
-        control_frame = tk.Frame(left_frame, bg=MAIN_BG)
-        control_frame.grid(row=4, column=0, columnspan=2, pady=(10, 5))
-        
-        # Кнопка Запустить/Стоп (слева)
-        self.start_stop_btn = tk.Button(
-            control_frame, 
-            text="Запустить", 
-            command=self.toggle_cooking, 
-            **button_style
+    def initUI(self):
+        # Окно поверх всех, без рамки
+        self.setWindowFlags(
+            Qt.WindowStaysOnTopHint | 
+            Qt.FramelessWindowHint | 
+            Qt.Tool
         )
-        self.start_stop_btn.pack(side=tk.LEFT, padx=(0, 5))
         
-        # Кнопка Сброс (справа)
-        tk.Button(
-            control_frame, 
-            text="Сброс", 
-            command=self.reset_sequence, 
-            **button_style
-        ).pack(side=tk.LEFT)
-
-        # Информация о паузе
-        pause_frame = tk.Frame(left_frame, bg=MAIN_BG)
-        pause_frame.grid(row=5, column=0, columnspan=2, pady=(5, 0))
+        # Прозрачный фон
+        self.setAttribute(Qt.WA_TranslucentBackground)
         
-        tk.Label(pause_frame, text="Управление паузой:", **label_style).grid(row=0, column=0, sticky="w")
-        tk.Label(pause_frame, text="F7 - продолжить", **label_style).grid(row=1, column=0, sticky="w")
-        tk.Label(pause_frame, text="F8 - пауза", **label_style).grid(row=2, column=0, sticky="w")
+        # Основной фрейм с закругленными углами
+        main_frame = QFrame(self)
+        main_frame.setStyleSheet(COUNTER_WINDOW_STYLES["frame"])
         
-        self.pause_status = tk.Label(pause_frame, text="Статус: не активно", **label_style)
-        self.pause_status.grid(row=3, column=0, sticky="w")
-
-        # Строка отчета
-        self.report_label = tk.Label(left_frame, text="", **label_style)
-        self.report_label.grid(row=6, column=0, columnspan=2, pady=(5, 10))
-
-        # Вертикальная сетка ячеек справа
-        cell_frame = tk.Frame(root, bg=MAIN_BG)
-        cell_frame.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
-
-        self.special_cells = {
-            "knife": (686, 572),
-            "whisk": (809, 572),
-            "fire": (928, 572),
-            "water": (1078, 284),
-        }
-
-        self.cells = {
-            "cell_1": (1160, 284), "cell_2": (1248, 284),
-            "cell_3": (1078, 375), "cell_4": (1160, 375), "cell_5": (1248, 375),
-            "cell_6": (1078, 458), "cell_7": (1160, 458), "cell_8": (1248, 458),
-            "cell_9": (1078, 542), "cell_10": (1160, 542), "cell_11": (1248, 542),
-            "cell_12": (1078, 626), "cell_13": (1160, 626), "cell_14": (1248, 626),
-            "cell_15": (1078, 712), "cell_16": (1160, 712), "cell_17": (1248, 712),
-            "cell_18": (1078, 792), "cell_19": (1160, 792), "cell_20": (1248, 792)
-        }
-
-        # Создаем первую строку с кнопкой "Вода" и двумя первыми ячейками
-        first_row = tk.Frame(cell_frame, bg=MAIN_BG)
-        first_row.grid(row=0, column=0, columnspan=3, sticky="ew")
+        # Горизонтальный layout для текста и счетчика
+        layout = QHBoxLayout(main_frame)
+        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(5)
         
-        # Кнопка "Вода"
-        tk.Button(
-            first_row, 
-            text="Вода", 
-            command=lambda: self.record_action("water"), 
-            **cooking_button_style
-        ).grid(row=0, column=0, padx=5, pady=2)
+        # Текст
+        text_label = QLabel("Приготовлено еды:")
+        text_label.setStyleSheet(COUNTER_WINDOW_STYLES["text"])
+        layout.addWidget(text_label)
         
-        # Ячейки 1 и 2
-        for i in range(1, 3):
-            cell_key = f"cell_{i}"
-            tk.Button(
-                first_row, 
-                text=f"({i})", 
-                command=lambda k=cell_key: self.record_cell_action(k), 
-                **cooking_button_style
-            ).grid(row=0, column=i, padx=5, pady=2)
-
-        # Остальные ячейки
-        for row in range(1, 7):
-            for col in range(3):
-                cell_number = (row-1) * 3 + col + 3
-                if cell_number > 20:
-                    continue
-                cell_key = f"cell_{cell_number}"
-                btn = tk.Button(
-                    cell_frame, 
-                    text=f"({cell_number})", 
-                    command=lambda k=cell_key: self.record_cell_action(k), 
-                    **cooking_button_style
-                )
-                btn.grid(row=row, column=col, pady=2, padx=2)
-
-        # Настройка веса строк и столбцов
-        root.grid_columnconfigure(0, weight=1)
-        root.grid_columnconfigure(1, weight=1)
-        root.grid_rowconfigure(0, weight=1)
-
-        # Регистрируем горячие клавиши
-        keyboard.add_hotkey('F8', self.pause_cooking)
-        keyboard.add_hotkey('F7', self.resume_cooking)
-
-    def get_random_offset(self, max_offset=25):
-        return random.randint(-max_offset, max_offset)
-
-    def record_action(self, action):
-        base_x, base_y = self.special_cells[action]
-        coords = (base_x + self.get_random_offset(), base_y + self.get_random_offset())
-        self.sequence.append((action, coords))
-        self.update_sequence_display()
-
-    def record_cell_action(self, cell_key):
-        base_x, base_y = self.cells[cell_key]
-        coords = (base_x + self.get_random_offset(), base_y + self.get_random_offset())
-        self.sequence.append((cell_key, coords))
-        self.update_sequence_display()
-
-    def update_sequence_display(self):
-        sequence_text = ", ".join([f"{action}" for action, _ in self.sequence])
-        self.sequence_label.config(text=sequence_text)
-
-    def reset_sequence(self):
-        self.sequence = []
-        self.update_sequence_display()
-        self.report_label.config(text="Последовательность сброшена")
-
-    def pause_cooking(self):
-        if not self.is_paused and hasattr(self, 'cooking_in_progress') and self.cooking_in_progress:
-            self.is_paused = True
-            self.pause_status.config(text="Статус: на паузе")
-            self.report_label.config(text="Готовка приостановлена (F7 - продолжить)")
-
-    def resume_cooking(self):
-        if self.is_paused and hasattr(self, 'cooking_in_progress') and self.cooking_in_progress:
-            self.is_paused = False
-            self.pause_status.config(text="Статус: активно")
-            self.report_label.config(text="Готовка продолжена")
-
-    def toggle_cooking(self):
-        if hasattr(self, 'cooking_in_progress') and self.cooking_in_progress:
-            self.stop_cooking()
-        else:
-            self.start_cooking()
-
-    def stop_cooking(self):
-        self.should_stop = True
-        self.cooking_in_progress = False
-        self.start_stop_btn.config(text="Запустить")
-        self.report_label.config(text="Готовка остановлена пользователем")
-
-    def start_cooking(self):
-        if not self.sequence:
-            self.report_label.config(text="Ошибка: последовательность пуста")
-            return
+        # Счетчик
+        self.counter_label = QLabel("0")
+        self.counter_label.setStyleSheet(COUNTER_WINDOW_STYLES["counter"])
+        layout.addWidget(self.counter_label)
+        
+        # Добавляем растягивающий элемент
+        layout.addStretch()
+        
+        # Устанавливаем layout для основного виджета
+        self.setLayout(QVBoxLayout())
+        self.layout().addWidget(main_frame)
+        self.layout().setContentsMargins(0, 0, 0, 0)
+        
+        # Устанавливаем фиксированный размер окна
+        self.setFixedSize(250, 52)
+        
+        # Позиционируем в правом верхнем углу
+        self.move_to_top_right()
+        
+    def paintEvent(self, event):
+        """Переопределяем paintEvent для рисования закругленных углов"""
+        super().paintEvent(event)
+        
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        painter.setBrush(QBrush(QColor(43, 43, 43)))
+        painter.setPen(Qt.NoPen)
+        
+        rect = self.rect()
+        painter.drawRoundedRect(rect, 8, 8)
+        
+    def resizeEvent(self, event):
+        """Обновляем при изменении размера"""
+        super().resizeEvent(event)
+        self.update()
+        
+    def move_to_top_right(self):
+        """Помещает окно в правый верхний угол"""
+        screen = QApplication.desktop().screenGeometry()
+        x = screen.width() - self.width() - 20
+        y = 10
+        self.move(x, y)
+        
+    def increment_counter(self):
+        """Увеличивает счетчик на 1"""
+        self.counter += 1
+        self.counter_label.setText(str(self.counter))
+        
+    def reset_counter(self):
+        """Сбрасывает счетчик"""
+        self.counter = 0
+        self.counter_label.setText("0")
+        
+    def mousePressEvent(self, event):
+        """Позволяет перемещать окно"""
+        if event.button() == Qt.LeftButton:
+            self.drag_position = event.globalPos() - self.frameGeometry().topLeft()
+            event.accept()
             
+    def mouseMoveEvent(self, event):
+        """Перемещение окна"""
+        if event.buttons() == Qt.LeftButton:
+            self.move(event.globalPos() - self.drag_position)
+            event.accept()
+
+class CookingThread(QThread):
+    """Поток для выполнения готовки"""
+    status_updated = pyqtSignal(str)
+    cycle_completed = pyqtSignal()
+    finished = pyqtSignal()
+    error_occurred = pyqtSignal(str)
+    
+    def __init__(self, sequence, cycles, resolution_mode="FullHD"):
+        super().__init__()
+        self.sequence = sequence
+        self.cycles = cycles
+        self.resolution_mode = resolution_mode
         self.is_paused = False
         self.should_stop = False
-        self.cooking_in_progress = True
-        self.start_stop_btn.config(text="Остановить")
-        self.pause_status.config(text="Статус: активно")
-        self.report_label.config(text="Выполняется готовка...")
-        self.root.update()
-        time.sleep(5)
         
-        cycles = self.cycle_count.get()
-        for cycle in range(cycles):
-            if self.should_stop:
-                self.report_label.config(text=f"Готовка прервана на цикле {cycle+1} из {cycles}")
-                break
-                
-            while self.is_paused:
-                time.sleep(0.1)
-                if self.should_stop:
-                    self.report_label.config(text=f"Готовка прервана на цикле {cycle+1} из {cycles}")
-                    return
-                    
-            self.report_label.config(text=f"Цикл {cycle+1} из {cycles}...")
-            self.root.update()
+        # Получаем координаты из общего модуля
+        self.cells = cooking_coordinate.get(resolution_mode, cooking_coordinate["FullHD"])
+        
+    def run(self):
+        try:
+            self.status_updated.emit("Начинаем готовку...")
+            time.sleep(2)  # Пауза перед стартом
             
-            for action, coords in self.sequence:
+            for cycle in range(self.cycles):
                 if self.should_stop:
                     break
                     
-                while self.is_paused:
-                    time.sleep(0.1)
+                self.status_updated.emit(f"Цикл {cycle + 1}/{self.cycles}...")
+                
+                # Проверка паузы
+                while self.is_paused and not self.should_stop:
+                    time.sleep(0.5)
+                    
+                if self.should_stop:
+                    break
+                
+                # Выполнение последовательности
+                for action, coords in self.sequence:
                     if self.should_stop:
-                        self.report_label.config(text=f"Готовка прервана на цикле {cycle+1} из {cycles}")
-                        return
+                        break
+                        
+                    # Проверка паузы
+                    while self.is_paused and not self.should_stop:
+                        time.sleep(0.5)
+                    
+                    if self.should_stop:
+                        break
+                    
+                    # Выполняем клик
+                    self.perform_click(coords)
                 
-                duration1 = random.uniform(0.3, 0.5)
-                duration2 = random.uniform(0.3, 0.5)
-                duration3 = random.uniform(0.3, 0.5)
+                if self.should_stop:
+                    break
                 
-                if action in self.special_cells:
-                    pyautogui.moveTo(coords[0], coords[1], duration=duration1)
-                    pyautogui.click(button='right')
-                elif action.startswith("cell"):
-                    x, y = coords
-                    pyautogui.moveTo(x, y, duration=duration2)
-                    pyautogui.click(button='right')
+                # Нажимаем кнопку готовки
+                if "start_cooking" in self.cells:
+                    self.perform_click(self.cells["start_cooking"], left_click=True)
+                    time.sleep(1.0)
                 
-                time.sleep(random.uniform(0.03, 0.1))
+                # Сигнализируем о завершении цикла
+                self.cycle_completed.emit()
+                
+                # Пауза между циклами
+                if cycle < self.cycles - 1 and not self.should_stop:
+                    sleep_time = random.uniform(6.0, 7.0)
+                    time.sleep(sleep_time)
             
             if self.should_stop:
-                break
+                self.status_updated.emit("Готовка остановлена")
+            else:
+                self.status_updated.emit(f"Готовка завершена! Циклов: {self.cycles}")
                 
-            # Нажатие кнопки готовки
-            start_x, start_y = 803, 673
-            pyautogui.moveTo(start_x + self.get_random_offset(), start_y + self.get_random_offset(), duration=duration3)
-            pyautogui.click(button='left')
-            
-            # Увеличенное время ожидания между циклами
-            if cycle < cycles - 1:
-                time.sleep(random.uniform(5.5, 6.0))
+        except Exception as e:
+            self.error_occurred.emit(str(e))
+        finally:
+            self.finished.emit()
     
-        self.cooking_in_progress = False
-        self.start_stop_btn.config(text="Запустить")
-        if not self.should_stop:
-            self.report_label.config(text=f"Готовка завершена! Выполнено {cycles} циклов.")
-        self.pause_status.config(text="Статус: не активно")
+    def perform_click(self, coords, left_click=False):
+        """Выполняет клик с случайным смещением"""
+        try:
+            import pyautogui
+            
+            # Добавляем случайное смещение
+            offset_x = random.randint(-15, 15)
+            offset_y = random.randint(-15, 15)
+            x = coords[0] + offset_x
+            y = coords[1] + offset_y
+            
+            # Перемещаем курсор
+            pyautogui.moveTo(x, y, duration=random.uniform(0.2, 0.4))
+            
+            # Выполняем клик
+            if left_click:
+                pyautogui.click(button='left')
+            else:
+                pyautogui.click(button='right')
+            
+            time.sleep(random.uniform(0.1, 0.3))
+            
+        except Exception as e:
+            logging.error(f"Ошибка при клике: {e}")
+    
+    def pause(self):
+        self.is_paused = True
+    
+    def resume(self):
+        self.is_paused = False
+    
+    def stop(self):
+        self.should_stop = True
+
+class CookingBotApp(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.running = False
+        self.cooking_thread = None
+        self.sequence = []
+        self.resolution_mode = "FullHD"
+        
+        # Создаем окно счетчика
+        self.counter_window = CounterWindow()
+        
+        self.initUI()
+        
+    def initUI(self):
+        # Настройка окна - увеличиваем высоту с 750 до 800
+        self.setWindowTitle("Готовка")
+        self.move(70, 40)
+        self.setFixedSize(800, 800)  # Увеличили высоту окна
+        self.setStyleSheet(WINDOW_STYLES["main_window"])
+        
+        # Основной вертикальный layout
+        main_layout = QVBoxLayout()
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(15)
+        
+        # Строка состояния
+        self.status_label = QLabel("Состояние: Не активно")
+        self.status_label.setStyleSheet(LABEL_STYLES["primary"])
+        self.status_label.setAlignment(Qt.AlignCenter)
+        main_layout.addWidget(self.status_label)
+        
+        # Фрейм для настроек
+        settings_frame = QFrame()
+        settings_frame.setStyleSheet(FRAME_STYLES["frame"])
+        settings_layout = QVBoxLayout(settings_frame)
+        settings_layout.setContentsMargins(15, 10, 15, 10)
+        settings_layout.setSpacing(10)
+        
+        # Поле для количество циклов
+        cycles_layout = QHBoxLayout()
+        cycles_label = QLabel("Количество циклов:")
+        cycles_label.setStyleSheet(LABEL_STYLES["secondary"])
+        cycles_layout.addWidget(cycles_label)
+        
+        self.cycles_entry = QLineEdit()
+        self.cycles_entry.setText("1")
+        self.cycles_entry.setStyleSheet(INPUT_STYLES["line_edit"])
+        self.cycles_entry.setMaximumWidth(80)
+        cycles_layout.addWidget(self.cycles_entry)
+        cycles_layout.addStretch()
+        
+        settings_layout.addLayout(cycles_layout)
+        
+        # Фрейм для разрешения экрана
+        resolution_frame = QFrame()
+        resolution_frame.setStyleSheet(FRAME_STYLES["frame"])
+        resolution_layout = QVBoxLayout(resolution_frame)
+        resolution_layout.setContentsMargins(15, 10, 15, 10)
+        resolution_layout.setSpacing(5)
+        
+        # Заголовок
+        resolution_title = QLabel("Разрешение экрана:")
+        resolution_title.setStyleSheet(LABEL_STYLES["secondary"])
+        resolution_title.setAlignment(Qt.AlignCenter)
+        resolution_layout.addWidget(resolution_title)
+        
+        # Фрейм для кнопок разрешения
+        buttons_frame = QFrame()
+        buttons_frame.setStyleSheet(FRAME_STYLES["frame_inner"])
+        buttons_layout = QHBoxLayout(buttons_frame)
+        buttons_layout.setContentsMargins(10, 5, 10, 5)
+        buttons_layout.setSpacing(15)  # Увеличиваем отступ между кнопками
+        
+        # Кнопка FullHD - уменьшаем минимальную ширину
+        self.fullhd_button = QPushButton("FullHD")
+        self.fullhd_button.setStyleSheet(BUTTON_STYLES["primary"])
+        self.fullhd_button.clicked.connect(lambda: self.set_resolution("FullHD"))
+        buttons_layout.addWidget(self.fullhd_button)
+        
+        # Кнопка QuadHD - уменьшаем минимальную ширину
+        self.quadhd_button = QPushButton("QuadHD")
+        self.quadhd_button.setStyleSheet(BUTTON_STYLES["secondary"])
+        self.quadhd_button.clicked.connect(lambda: self.set_resolution("QuadHD"))
+        buttons_layout.addWidget(self.quadhd_button)
+        
+        resolution_layout.addWidget(buttons_frame)
+        
+        # Метка текущего разрешения
+        self.resolution_label = QLabel(f"Текущее: {self.resolution_mode}")
+        self.resolution_label.setStyleSheet(LABEL_STYLES["muted"])
+        self.resolution_label.setAlignment(Qt.AlignCenter)
+        resolution_layout.addWidget(self.resolution_label)
+        
+        settings_layout.addWidget(resolution_frame)
+        
+        main_layout.addWidget(settings_frame)
+        
+        # Фрейм для инструментов и ячеек
+        tools_frame = QFrame()
+        tools_frame.setStyleSheet(FRAME_STYLES["frame"])
+        tools_layout = QVBoxLayout(tools_frame)
+        tools_layout.setContentsMargins(15, 10, 15, 10)
+        
+        # Инструменты
+        tools_label = QLabel("Инструменты:")
+        tools_label.setStyleSheet(LABEL_STYLES["secondary"])
+        tools_layout.addWidget(tools_label)
+        
+        tools_buttons_layout = QHBoxLayout()
+        tools = [("Нож", "knife"), ("Венчик", "whisk"), ("Огонь", "fire")]
+        for text, action in tools:
+            btn = QPushButton(text)
+            btn.setStyleSheet(BUTTON_STYLES["primary_small"])
+            btn.clicked.connect(lambda checked, a=action: self.record_action(a))
+            tools_buttons_layout.addWidget(btn)
+        
+        tools_layout.addLayout(tools_buttons_layout)
+        
+        # Ячейки
+        cells_label = QLabel("Ячейки:")
+        cells_label.setStyleSheet("""
+            QLabel {
+                color: #ffffff;
+                font-size: 14px;
+                font-weight: bold;
+                margin-top: 10px;
+            }
+        """)
+        tools_layout.addWidget(cells_label)
+        
+        # Создаем сетку для кнопок ячеек
+        cells_grid = QGridLayout()
+        cells_grid.setSpacing(5)
+        
+        # Первая строка: Вода и ячейки 1-2
+        # Кнопка Вода в первой колонке
+        water_btn = QPushButton("Вода")
+        water_btn.setStyleSheet(BUTTON_STYLES["primary_small"])
+        water_btn.clicked.connect(lambda: self.record_action("water"))
+        cells_grid.addWidget(water_btn, 0, 0)
+        
+        # Ячейки 1-2 в колонках 1 и 2
+        for i in range(1, 3):
+            btn = QPushButton(f"Ячейка {i}")
+            btn.setStyleSheet(BUTTON_STYLES["primary_small"])
+            btn.clicked.connect(lambda checked, c=f"cell_{i}": self.record_cell_action(c))
+            cells_grid.addWidget(btn, 0, i)
+        
+        # Остальные ячейки (3-20) по 3 в строку (начиная со строки 1)
+        for i in range(3, 21):
+            row = ((i - 3) // 3) + 1
+            col = (i - 3) % 3
+            btn = QPushButton(f"Ячейка {i}")
+            btn.setStyleSheet(BUTTON_STYLES["primary_small"])
+            btn.clicked.connect(lambda checked, c=f"cell_{i}": self.record_cell_action(c))
+            cells_grid.addWidget(btn, row, col)
+        
+        tools_layout.addLayout(cells_grid)
+        main_layout.addWidget(tools_frame)
+        
+        # Фрейм для управления - ВЫСОТА ЭТОГО БЛОКА КОНТРОЛИРУЕТСЯ ЗДЕСЬ
+        control_frame = QFrame()
+        control_frame.setStyleSheet(FRAME_STYLES["frame"])
+        control_layout = QHBoxLayout(control_frame)
+        control_layout.setContentsMargins(15, 15, 15, 15)
+        
+        # Последовательность действий
+        sequence_group = QGroupBox("Записанная последовательность:")
+        sequence_group.setStyleSheet(GROUPBOX_STYLES["standard"])
+        
+        sequence_layout = QVBoxLayout()
+        self.sequence_label = QLabel("Пусто")
+        self.sequence_label.setStyleSheet("""
+            QLabel {
+                color: #cccccc;
+                font-size: 12px;
+                padding: 5px;
+                background-color: #2b2b2b;
+                border-radius: 3px;
+                min-height: 20px;
+            }
+        """)
+        self.sequence_label.setWordWrap(True)
+        sequence_layout.addWidget(self.sequence_label)
+        sequence_group.setLayout(sequence_layout)
+        
+        control_layout.addWidget(sequence_group, 2)
+        
+        # Кнопки управления - УМЕНЬШАЕМ ОТСТУПЫ МЕЖДУ КНОПКАМИ
+        buttons_layout = QVBoxLayout()
+        buttons_layout.setSpacing(5)  # Уменьшено с 10 на 5 - это контролирует высоту между кнопками
+        
+        # Кнопки управления готовкой
+        self.start_stop_btn = QPushButton("Запустить")
+        self.start_stop_btn.setStyleSheet(BUTTON_STYLES["primary"])
+        self.start_stop_btn.clicked.connect(self.toggle_cooking)
+        buttons_layout.addWidget(self.start_stop_btn)
+        
+        # Кнопка управления окном счетчика (перемещена сюда)
+        self.counter_btn = QPushButton("Показать счётчик")  # Текст изменен, так как счетчик скрыт
+        self.counter_btn.setStyleSheet(BUTTON_STYLES["accent_small"])
+        self.counter_btn.clicked.connect(self.toggle_counter_window)
+        buttons_layout.addWidget(self.counter_btn)
+        
+        # Кнопки паузы
+        pause_layout = QHBoxLayout()
+        pause_layout.setSpacing(5)  # Уменьшаем отступ между кнопками паузы
+        
+        resume_btn = QPushButton("Продолжить (F7)")
+        resume_btn.setStyleSheet(BUTTON_STYLES["success"])
+        resume_btn.clicked.connect(self.resume_cooking)
+        pause_layout.addWidget(resume_btn)
+        
+        pause_btn = QPushButton("Пауза (F8)")
+        pause_btn.setStyleSheet(BUTTON_STYLES["success"])
+        pause_btn.clicked.connect(self.pause_cooking)
+        pause_layout.addWidget(pause_btn)
+        
+        buttons_layout.addLayout(pause_layout)
+        
+        control_layout.addLayout(buttons_layout, 1)
+        main_layout.addWidget(control_frame)
+
+        reset_btn = QPushButton("Сбросить последовательность")
+        reset_btn.setStyleSheet(BUTTON_STYLES["danger_small"])
+        reset_btn.clicked.connect(self.reset_sequence)
+        buttons_layout.addWidget(reset_btn)
+        
+        # Убрал кнопку счетчика из main_layout, так как она теперь в блоке управления
+        
+        self.setLayout(main_layout)
+        
+        # Счетчик теперь изначально СКРЫТ - убрал строку показа счетчика
+        # self.counter_window.show() - УДАЛЕНО
+        
+        # Устанавливаем горячие клавиши
+        self.setup_hotkeys()
+        
+    def set_resolution(self, mode):
+        """Устанавливает разрешение экрана"""
+        self.resolution_mode = mode
+        self.resolution_label.setText(f"Текущее: {self.resolution_mode}")
+        
+        # Обновляем стили кнопок
+        if mode == "FullHD":
+            self.fullhd_button.setStyleSheet(BUTTON_STYLES["primary"])
+            self.quadhd_button.setStyleSheet(BUTTON_STYLES["secondary"])
+        else:
+            self.fullhd_button.setStyleSheet(BUTTON_STYLES["secondary"])
+            self.quadhd_button.setStyleSheet(BUTTON_STYLES["primary"])
+    
+    def setup_hotkeys(self):
+        """Настройка горячих клавиш"""
+        # В PyQt5 горячие клавиши обрабатываются через keyPressEvent
+        pass
+    
+    def keyPressEvent(self, event):
+        """Обработка горячих клавиш"""
+        if event.key() == Qt.Key_F7:
+            self.resume_cooking()
+        elif event.key() == Qt.Key_F8:
+            self.pause_cooking()
+        else:
+            super().keyPressEvent(event)
+    
+    def record_action(self, action):
+        """Запись действия инструмента"""
+        try:
+            cells = cooking_coordinate.get(self.resolution_mode, cooking_coordinate["FullHD"])
+            if action in cells:
+                coords = cells[action]
+                self.sequence.append((action, coords))
+                self.update_sequence_display()
+            else:
+                logging.error(f"Неизвестное действие: {action}")
+        except Exception as e:
+            logging.error(f"Ошибка записи действия: {e}")
+    
+    def record_cell_action(self, cell_key):
+        """Запись ячейки"""
+        try:
+            cells = cooking_coordinate.get(self.resolution_mode, cooking_coordinate["FullHD"])
+            if cell_key in cells:
+                coords = cells[cell_key]
+                self.sequence.append((cell_key, coords))
+                self.update_sequence_display()
+            else:
+                logging.error(f"Неизвестная ячейка: {cell_key}")
+        except Exception as e:
+            logging.error(f"Ошибка записи ячейки: {e}")
+    
+    def update_sequence_display(self):
+        """Обновление отображения последовательности"""
+        sequence_text = ", ".join([f"{action}" for action, _ in self.sequence])
+        self.sequence_label.setText(sequence_text if sequence_text else "Пусто")
+    
+    def reset_sequence(self):
+        """Сброс последовательности"""
+        self.sequence = []
+        self.update_sequence_display()
+        self.status_label.setText("Состояние: Последовательность сброшена")
+    
+    def pause_cooking(self):
+        """Пауза готовки"""
+        if self.cooking_thread and not self.cooking_thread.is_paused:
+            self.cooking_thread.pause()
+            self.status_label.setText("Состояние: На паузе (F7 - продолжить)")
+    
+    def resume_cooking(self):
+        """Продолжение готовки"""
+        if self.cooking_thread and self.cooking_thread.is_paused:
+            self.cooking_thread.resume()
+            self.status_label.setText("Состояние: Активно")
+    
+    def toggle_cooking(self):
+        """Запуск/остановка готовки"""
+        if self.running:
+            self.stop_cooking()
+        else:
+            self.start_cooking()
+    
+    def start_cooking(self):
+        """Запуск готовки"""
+        if not self.sequence:
+            QMessageBox.warning(self, "Ошибка", "Последовательность пуста!")
+            return
+        
+        try:
+            cycles = int(self.cycles_entry.text())
+            if cycles <= 0:
+                raise ValueError
+        except ValueError:
+            QMessageBox.warning(self, "Ошибка", "Некорректное число циклов")
+            return
+        
+        # Сбрасываем счетчик перед началом готовки
+        self.counter_window.reset_counter()
+        
+        self.running = True
+        self.start_stop_btn.setText("Остановить")
+        self.start_stop_btn.setStyleSheet(BUTTON_STYLES["danger"])
+        
+        # Создаем и запускаем поток готовки
+        self.cooking_thread = CookingThread(self.sequence, cycles, self.resolution_mode)
+        self.cooking_thread.status_updated.connect(self.update_status_label)
+        self.cooking_thread.cycle_completed.connect(self.increment_counter)
+        self.cooking_thread.finished.connect(self.on_cooking_finished)
+        self.cooking_thread.error_occurred.connect(self.on_cooking_error)
+        self.cooking_thread.start()
+        
+        self.status_label.setText("Состояние: Начинаем готовку...")
+    
+    def stop_cooking(self):
+        """Остановка готовки"""
+        if self.cooking_thread:
+            self.cooking_thread.stop()
+            self.cooking_thread.wait()
+        
+        self.running = False
+        self.start_stop_btn.setText("Запустить")
+        self.start_stop_btn.setStyleSheet(BUTTON_STYLES["primary"])
+    
+    def on_cooking_finished(self):
+        """Обработка завершения готовки"""
+        self.running = False
+        self.start_stop_btn.setText("Запустить")
+        self.start_stop_btn.setStyleSheet(BUTTON_STYLES["primary"])
+    
+    def on_cooking_error(self, error_msg):
+        """Обработка ошибки готовки"""
+        QMessageBox.critical(self, "Ошибка", f"Ошибка при готовке: {error_msg}")
+        self.stop_cooking()
+    
+    def increment_counter(self):
+        """Увеличивает счетчик приготовленной еды"""
+        self.counter_window.increment_counter()
+    
+    def toggle_counter_window(self):
+        """Показать/скрыть окно счетчика"""
+        if self.counter_window.isVisible():
+            self.counter_window.hide()
+            self.counter_btn.setText("Показать счётчик")
+        else:
+            self.counter_window.show()
+            self.counter_window.move_to_top_right()
+            self.counter_btn.setText("Скрыть счётчик")
+    
+    def update_status_label(self, status_text):
+        """Обновляет метку статуса"""
+        self.status_label.setText(f"Состояние: {status_text}")
+    
+    def closeEvent(self, event):
+        """Обработчик закрытия окна"""
+        # Останавливаем готовку
+        if self.running:
+            self.stop_cooking()
+        
+        # Закрываем окно счетчика
+        self.counter_window.close()
+        
+        event.accept()
+
+def main():
+    app = QApplication(sys.argv)
+    cooking_app = CookingBotApp()
+    cooking_app.show()
+    sys.exit(app.exec_())
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    app = CookingBotApp(root)
-    root.mainloop()
+    main()

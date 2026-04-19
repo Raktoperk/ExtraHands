@@ -1,6 +1,6 @@
-# Python cache
-__pycache__/
-Extra_Hands/
-build/
-test.py
 Extra_Hands.zip
+ExtraHands.spec
+other
+Extra_Hands
+build
+__pycache__

@@ -3,9 +3,9 @@ from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QPainter, QBrush, QColor
 
-from components.functions import press_key, detect_image, check_color
+from components.functions import press_key, check_color
 from components.colors import colors
-from components.coordinates import builder_coordinate
+from components.coordinates import farm_cows_coordinate
 
 import sys
 import time
@@ -19,7 +19,7 @@ except ImportError:
     # Запасные значения если файл стилей не найден
     from components.styles import (
         COLORS, WINDOW_STYLES, BUTTON_STYLES, LABEL_STYLES, 
-        CHECKBOX_STYLES, COUNTER_WINDOW_STYLES, FRAME_STYLES,
+        COUNTER_WINDOW_STYLES, FRAME_STYLES,
         INPUT_STYLES, GROUPBOX_STYLES
     )
 
@@ -31,7 +31,17 @@ else:
     # Если запускаем из исходников
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Импортируем функции после определения BASE_DIR
+# Добавляем недостающие цвета в colors, если их нет
+if not hasattr(colors, 'color'):
+    colors.color = {}
+
+# Добавляем опасный цвет, если его нет
+if 'danger' not in colors.color:
+    colors.color['danger'] = (255, 105, 86)  # Оранжево-красный
+
+# Добавляем белый цвет для коровника, если его нет
+if 'white' not in colors.color:
+    colors.color['white'] = (255, 255, 255)
 
 class CounterWindow(QWidget):
     """Маленькое окно счетчика поверх всех окон"""
@@ -62,7 +72,7 @@ class CounterWindow(QWidget):
         layout.setSpacing(5)
         
         # Текст
-        self.text_label = QLabel("Выполнено действий:")
+        self.text_label = QLabel("Подоенно коров:")
         self.text_label.setStyleSheet(COUNTER_WINDOW_STYLES["text"])
         layout.addWidget(self.text_label)
         
@@ -80,7 +90,7 @@ class CounterWindow(QWidget):
         self.layout().setContentsMargins(0, 0, 0, 0)
         
         # Устанавливаем фиксированный размер окна
-        self.setFixedSize(250, 52)
+        self.setFixedSize(280, 52)
         
         # Позиционируем в правом верхнем углу
         self.move_to_top_right()
@@ -162,8 +172,8 @@ class LogWindow(QWidget):
         self.setWindowFlag(Qt.WindowCloseButtonHint, False)
         
         # Настройка окна
-        self.setWindowTitle("Логи и ошибки стройки")
-        self.setFixedSize(700, 400)  # Увеличили размер окна
+        self.setWindowTitle("Логи и ошибки коровника")
+        self.setFixedSize(700, 400)
         self.setStyleSheet(WINDOW_STYLES["main_window"])
         
         # Основной layout
@@ -214,8 +224,8 @@ class LogWindow(QWidget):
         error_layout.addWidget(self.error_text)
         
         # Распределяем пространство между двумя группами
-        content_layout.addWidget(log_group, 1)  # Коэффициент 1
-        content_layout.addWidget(error_group, 1)  # Коэффициент 1
+        content_layout.addWidget(log_group, 1)
+        content_layout.addWidget(error_group, 1)
         
         main_layout.addLayout(content_layout)
         
@@ -311,139 +321,161 @@ class LogWindow(QWidget):
                 QTimer.singleShot(1500, lambda: btn.setText(original_text))
 
 class WorkerThread(QThread):
-    action_completed = pyqtSignal()  # Сигнал для завершения действия
+    action_completed = pyqtSignal()  # Сигнал для завершения действия (опасный цвет)
     key_detected = pyqtSignal(str)   # Сигнал для обнаружения клавиши
     log_message = pyqtSignal(str)    # Сигнал для записи в лог
     status_updated = pyqtSignal(str) # Сигнал для обновления статуса
+    danger_detected = pyqtSignal()   # Сигнал для обнаружения опасного цвета
+    white_disappeared = pyqtSignal() # Сигнал для исчезновения белого цвета (счетчик)
     
-    def __init__(self, resolution_mode, delay_between_presses, color_tolerance=10):
+    def __init__(self, resolution_mode, delay_between_presses, color_tolerance=15):
         super().__init__()
         self.resolution_mode = resolution_mode
         self.delay_between_presses = delay_between_presses
         self.color_tolerance = color_tolerance
         self.running = True
+        self.force_pause = False
+        self.white_was_present = False  # Флаг для отслеживания наличия белого цвета
         
         # Получаем координаты из общих модулей
-        self.builder_coords = {
-            "FullHD": builder_coordinate["FullHD"].get("builder_marker", (765, 496)),
-            "QuadHD": builder_coordinate["QuadHD"].get("builder_marker", (1084, 674))
-        }
+        self.coords = farm_cows_coordinate
         
-        self.target_color = colors.color["light_green"]
-        self.detected_key = None  # Запомненная клавиша
-        self.action_in_progress = False  # Флаг выполнения действия
+        # Цвета
+        self.danger_color = colors.color["danger"]
+        self.white_color = colors.color["white"]
+        
+        self.last_key_pressed = None  # Последняя нажатая клавиша
         
     def run(self):
-        self.log_message.emit("Запуск потока строительства")
-        self.status_updated.emit("Ожидание зеленого цвета...")
+        self.log_message.emit("Запуск потока коровника")
+        self.status_updated.emit("Ожидание...")
         
         while self.running:
-            # Проверяем наличие зеленого цвета в координатах builder_marker
-            if self.check_color_with_tolerance():
-                if not self.action_in_progress:
-                    # Зеленый цвет появился, начинаем новое действие
-                    self.action_in_progress = True
-                    self.status_updated.emit("Обнаружен зеленый цвет, определяю клавишу...")
-                    self.process_building_action()
-            else:
-                if self.action_in_progress:
-                    # Зеленый цвет пропал - завершаем действие
-                    self.action_in_progress = False
-                    self.detected_key = None
-                    self.action_completed.emit()
-                    self.status_updated.emit("Действие завершено, жду новый цвет")
-                    self.log_message.emit("Зеленый цвет пропал, действие завершено")
-                else:
-                    # Ожидаем зеленый цвет
-                    self.msleep(50)
+            # Проверяем наличие белого цвета
+            white_present = check_color((1320, 900), (253, 253, 253), tolerance=10)
+            
+            # Если белый цвет был и пропал - увеличиваем счетчик
+            if self.white_was_present and not white_present:
+                self.white_disappeared.emit()
+                self.log_message.emit("Белый цвет пропал - +1 к счетчику")
+                self.white_was_present = False
+            
+            # Если белый цвет появился - запоминаем
+            if white_present:
+                self.white_was_present = True
+            
+            # Пока есть белый цвет - работает
+            while white_present and self.running:
+                # 1. Приоритетная проверка опасного цвета
+                if self.check_danger_color():
+                    if not self.force_pause:
+                        self.force_pause = True
+                        self.status_updated.emit("ПАУЗА (опасный цвет)")
+                        self.log_message.emit("ВНИМАНИЕ: Обнаружен опасный цвет")
+                        self.danger_detected.emit()
+                    
+                    # Случайная пауза от 5 до 15 секунд
+                    pause_time = random.uniform(5, 15)
+                    self.status_updated.emit(f"Пауза {pause_time:.1f}с (опасный цвет)")
+                    
+                    # Ждем с проверкой опасного цвета
+                    pause_start = time.time()
+                    while time.time() - pause_start < pause_time and self.running:
+                        self.msleep(100)  # Проверяем каждые 100 мс
+                        
+                        # Если опасный цвет пропал - выходим из паузы досрочно
+                        if not self.check_danger_color():
+                            self.log_message.emit("Опасный цвет пропал, досрочное завершение паузы")
+                            break
+                    
+                    # Проверяем, пропал ли опасный цвет
+                    if not self.check_danger_color():
+                        self.force_pause = False
+                        self.status_updated.emit("Активно")
+                        self.log_message.emit("Опасный цвет пропал, возобновление работы")
+                    
+                    # После паузы обновляем проверку белого цвета и продолжаем цикл
+                    white_present = check_color((1320, 900), (253, 253, 253), tolerance=10)
                     continue
                 
-            self.msleep(10)  # Небольшая пауза между проверками
+                # Если была пауза, но опасный цвет все еще есть, продолжаем паузу
+                if self.force_pause:
+                    if not self.check_danger_color():
+                        self.force_pause = False
+                        self.status_updated.emit("Активно")
+                        self.log_message.emit("Опасный цвет пропал, возобновление работы")
+                    else:
+                        white_present = check_color((1320, 900), (253, 253, 253), tolerance=10)
+                        continue
+                
+                # 2. Проверка белых цветов для клавиш A и D
+                a_detected = self.check_white_color("color_a")
+                d_detected = self.check_white_color("color_d")
+                
+                if a_detected and d_detected:
+                    # Если оба цвета, делаем небольшую паузу
+                    self.msleep(50)
+                elif a_detected:
+                    # Нажимаем A
+                    press_key('a', boundary=(0.04, 0.12))
+                    self.last_key_pressed = 'A'
+                    self.key_detected.emit('A')
+                    
+                    # Задержка между нажатиями
+                    delay_seconds = self.delay_between_presses / 1000
+                    time.sleep(random.uniform(delay_seconds + 0.005, delay_seconds + 0.025))
+                    
+                elif d_detected:
+                    # Нажимаем D
+                    press_key('d', boundary=(0.04, 0.12))
+                    self.last_key_pressed = 'D'
+                    self.key_detected.emit('D')
+                    
+                    # Задержка между нажатиями
+                    delay_seconds = self.delay_between_presses / 1000
+                    time.sleep(random.uniform(delay_seconds + 0.005, delay_seconds + 0.025))
+                    
+                else:
+                    # Ничего не обнаружено
+                    self.msleep(50)  # Короткая пауза
+                
+                # Обновляем проверку белого цвета для следующей итерации цикла
+                white_present = check_color((1320, 900), (253, 253, 253), tolerance=10)
+            
+            # Небольшая пауза, если белый цвет отсутствует
+            self.msleep(50)
         
-        self.log_message.emit("Поток строительства остановлен")
+        self.log_message.emit("Поток коровника остановлен")
     
-    def check_color_with_tolerance(self):
-        """Проверяет наличие целевого цвета в заданных координатах с допуском"""
-        x, y = self.builder_coords[self.resolution_mode]
-        
+    def check_danger_color(self):
+        """Проверяет наличие опасного цвета"""
         try:
-            return check_color((x, y), self.target_color, self.color_tolerance)
-        except Exception:
+            coords = self.coords[self.resolution_mode]["danger_color"]
+            return check_color(coords, self.danger_color, self.color_tolerance)
+        except Exception as e:
+            self.log_message.emit(f"Ошибка при проверке опасного цвета: {e}")
             return False
     
-    def detect_which_key(self):
-        """Определяет, какую клавишу нужно нажимать (E, F или H)"""
-        keys_dir = os.path.join(BASE_DIR, 'assets', 'keys')
-        image_keys = ['e', 'f', 'h']
-        
-        for key in image_keys:
-            image_path = os.path.join(keys_dir, f'{key}.png')
-            
-            if not os.path.exists(image_path):
-                self.log_message.emit(f"Файл не найден: {image_path}")
-                continue
-            
-            # Ищем изображение на экране
-            result = detect_image(image_path, threshold=0.9)
-            
-            if result is not None:
-                self.log_message.emit(f"Обнаружено изображение: {key}.png")
-                return key
-        
-        return None
-    
-    def process_building_action(self):
-        """Обрабатывает действие строительства"""
-        # Шаг 1: Определяем клавишу
-        if self.detected_key is None:
-            self.detected_key = self.detect_which_key()
-            
-        if self.detected_key is None:
-            self.status_updated.emit("Клавиша не определена")
-            self.log_message.emit("ОШИБКА: Не удалось определить клавишу для нажатия")
-            self.action_in_progress = False
-            return
-        
-        self.key_detected.emit(self.detected_key)
-        self.status_updated.emit(f"Нажимаю клавишу: {self.detected_key.upper()}")
-        
-        # Шаг 2: Нажимаем клавишу пока виден зеленый цвет
-        action_start_time = time.time()
-        action_timeout = 15  # Максимальное время выполнения одного действия (секунд)
-        
-        while self.running and self.check_color_with_tolerance():
-            # Проверяем не превышено ли время выполнения
-            if time.time() - action_start_time > action_timeout:
-                self.status_updated.emit("Превышено время выполнения действия")
-                self.log_message.emit("ВНИМАНИЕ: Превышено время выполнения действия")
-                break
-            
-            # Нажимаем определенную клавишу
-            press_key(self.detected_key, boundary=(0.04, 0.12))
-            
-            # Задержка с небольшим случайным отклонением
-            delay_seconds = self.delay_between_presses / 1000
-            time.sleep(random.uniform(delay_seconds + 0.005, delay_seconds + 0.025))
-            
-            # Небольшая пауза перед следующей проверкой
-            time.sleep(0.01)
-        
-        # Если зеленый цвет пропал во время цикла, завершаем действие
-        if not self.check_color_with_tolerance():
-            self.action_in_progress = False
-            self.detected_key = None
+    def check_white_color(self, coord_key):
+        """Проверяет наличие белого цвета в указанных координатах"""
+        try:
+            coords = self.coords[self.resolution_mode][coord_key]
+            return check_color(coords, self.white_color, 0)  # Белый проверяем точно
+        except Exception as e:
+            self.log_message.emit(f"Ошибка при проверке белого цвета: {e}")
+            return False
     
     def stop(self):
         self.running = False
 
-class BuilderApp(QWidget):
+class FarmCowsApp(QWidget):
     def __init__(self):
         super().__init__()
         self.running = False
         self.worker_thread = None
         self.resolution_mode = "FullHD"
-        self.delay_between_presses = 120  # Значение по умолчанию в мс
-        self.color_tolerance = 10  # Допуск цвета по умолчанию
+        self.delay_between_presses = 180  # Значение по умолчанию в мс
+        self.color_tolerance = 15  # Допуск цвета по умолчанию
         
         # Создаем окно счетчика (изначально скрыто)
         self.counter_window = CounterWindow()
@@ -455,7 +487,7 @@ class BuilderApp(QWidget):
         
     def initUI(self):
         # Настройка окна
-        self.setWindowTitle("Стройка")
+        self.setWindowTitle("Ферма (коровник)")
         self.setFixedSize(550, 510)
         self.setStyleSheet(WINDOW_STYLES["main_window"])
         
@@ -558,16 +590,20 @@ class BuilderApp(QWidget):
         self.detection_label.setAlignment(Qt.AlignCenter)
         detection_layout.addWidget(self.detection_label)
         
-        # Информация о проверяемых изображениях
-        images_title = QLabel("Проверяемые изображения:")
-        images_title.setStyleSheet(LABEL_STYLES["secondary"])
-        images_title.setAlignment(Qt.AlignCenter)
-        detection_layout.addWidget(images_title)
+        # Информация о цветах и координатах
+        info_title = QLabel("Параметры детекции:")
+        info_title.setStyleSheet(LABEL_STYLES["secondary"])
+        info_title.setAlignment(Qt.AlignCenter)
+        detection_layout.addWidget(info_title)
         
-        # Показываем информацию о цвете и координатах
-        target_color = colors.color["light_green"]
-        coords = builder_coordinate[self.resolution_mode]["builder_marker"]
-        info_text = f"Цвет: RGB{target_color}, Координаты: {coords}"
+        # Показываем информацию о цветах и координатах
+        danger_color = colors.color["danger"]
+        white_color = colors.color["white"]
+        coords = farm_cows_coordinate[self.resolution_mode]
+        
+        info_text = (f"Опасный цвет: RGB{danger_color}, Координаты: {coords['danger_color']}\n"
+                     f"Белый цвет (A): {coords['color_a']}, (D): {coords['color_d']}\n"
+                     f"Допуск цвета: {self.color_tolerance}")
         images_info = QLabel(info_text)
         images_info.setStyleSheet(LABEL_STYLES["muted"])
         images_info.setAlignment(Qt.AlignCenter)
@@ -600,7 +636,7 @@ class BuilderApp(QWidget):
         self.counter_btn.clicked.connect(self.toggle_counter_window)
         main_layout.addWidget(self.counter_btn, alignment=Qt.AlignCenter)
         
-        # Кнопка управления окном логов (в правом нижнем углу)
+        # Кнопка управления окном логов
         log_btn_layout = QHBoxLayout()
         log_btn_layout.addStretch()
         
@@ -613,60 +649,38 @@ class BuilderApp(QWidget):
         
         self.setLayout(main_layout)
         
-        # Проверяем существование папки keys и файлов
-        self.check_keys_folder()
-        
     def set_resolution(self, mode):
         """Устанавливает разрешение экрана"""
         self.resolution_mode = mode
         self.resolution_label.setText(f"Текущее: {self.resolution_mode}")
         
-        # Обновляем стили кнопок
+        # Обновляем информацию о координатах в окне
+        coords = farm_cows_coordinate[self.resolution_mode]
+        danger_color = colors.color["danger"]
+        
+        # Обновляем кнопки
         if mode == "FullHD":
             self.fullhd_button.setStyleSheet(BUTTON_STYLES["primary_small"].replace(
                 "background-color: #2196F3;", "background-color: #4CAF50;"
-            ).replace(
-                "QPushButton:hover {", "QPushButton:hover { background-color: #45a049;"
             ))
             self.quadhd_button.setStyleSheet(BUTTON_STYLES["secondary_small"])
         else:
             self.fullhd_button.setStyleSheet(BUTTON_STYLES["secondary_small"])
             self.quadhd_button.setStyleSheet(BUTTON_STYLES["primary_small"].replace(
                 "background-color: #2196F3;", "background-color: #4CAF50;"
-            ).replace(
-                "QPushButton:hover {", "QPushButton:hover { background-color: #45a049;"
             ))
         
-    def check_keys_folder(self):
-        """Проверяет наличие папки keys и необходимых файлов"""
-        keys_dir = os.path.join(BASE_DIR, 'assets', 'keys')
-        
-        if not os.path.exists(keys_dir):
-            error_msg = "ОШИБКА: Папка 'keys' не найдена!"
-            self.status_label.setText(error_msg)
-            self.add_log(f"ВНИМАНИЕ: {error_msg}")
-            return False
-            
-        required_files = ['e.png', 'f.png', 'h.png']
-        missing_files = []
-        
-        for file in required_files:
-            file_path = os.path.join(keys_dir, file)
-            if not os.path.exists(file_path):
-                missing_files.append(file)
-                
-        if missing_files:
-            error_msg = f"ОШИБКА: Отсутствуют файлы: {', '.join(missing_files)}"
-            self.status_label.setText(error_msg)
-            self.add_log(f"ВНИМАНИЕ: {error_msg}")
-            return False
-            
-        success_msg = f"Все файлы найдены в папке: {keys_dir}"
-        self.add_log(success_msg)
-        return True
+        # Обновляем информацию в детекции
+        for i in range(self.detection_label.parent().layout().count()):
+            widget = self.detection_label.parent().layout().itemAt(i).widget()
+            if isinstance(widget, QLabel) and widget != self.detection_label and widget.text().startswith("Опасный цвет:"):
+                widget.setText(f"Опасный цвет: RGB{danger_color}, Координаты: {coords['danger_color']}\n"
+                              f"Белый цвет (A): {coords['color_a']}, (D): {coords['color_d']}\n"
+                              f"Допуск цвета: {self.color_tolerance}")
+                break
         
     def toggle_counter_window(self):
-        """Показать/скрыть окно счетчика (работает во время работы скрипта)"""
+        """Показать/скрыть окно счетчика"""
         if self.counter_window.isVisible():
             self.counter_window.hide()
             self.counter_btn.setText("Показать счётчик")
@@ -699,10 +713,6 @@ class BuilderApp(QWidget):
     
     def start_bot(self):
         """Запускает бота"""
-        # Проверяем наличие файлов перед запуском
-        if not self.check_keys_folder():
-            return
-            
         try:
             # Получаем задержку из поля ввода
             self.delay_between_presses = int(self.delay_entry.text())
@@ -725,11 +735,18 @@ class BuilderApp(QWidget):
         self.add_log("Счётчик сброшен (начало нового цикла)")
         
         # Создаем и запускаем рабочий поток
-        self.worker_thread = WorkerThread(self.resolution_mode, self.delay_between_presses, self.color_tolerance)
+        self.worker_thread = WorkerThread(
+            self.resolution_mode, 
+            self.delay_between_presses, 
+            self.color_tolerance
+        )
         self.worker_thread.action_completed.connect(self.increment_counter)
         self.worker_thread.key_detected.connect(self.update_detection_label)
         self.worker_thread.log_message.connect(self.add_log)
         self.worker_thread.status_updated.connect(self.update_status_label)
+        # Убираем подключение danger_detected к счетчику
+        # self.worker_thread.danger_detected.connect(self.increment_counter)
+        self.worker_thread.white_disappeared.connect(self.increment_counter)  # Только этот сигнал для счетчика
         self.worker_thread.start()
         
         self.add_log(f"Бот запущен. Задержка: {self.delay_between_presses} мс, Разрешение: {self.resolution_mode}")
@@ -750,7 +767,7 @@ class BuilderApp(QWidget):
         self.add_log("Бот остановлен")
     
     def increment_counter(self):
-        """Увеличивает счетчик в отдельном окне (работает даже если окно скрыто)"""
+        """Увеличивает счетчик в отдельном окне"""
         self.counter_window.increment_counter()
     
     def add_log(self, message):
@@ -759,7 +776,8 @@ class BuilderApp(QWidget):
     
     def update_detection_label(self, key_name):
         """Обновляет метку обнаруженных клавиш"""
-        self.detection_label.setText(f"Обнаружено: {key_name.upper()}.png (нажатие клавиши {key_name.upper()})")
+        if key_name in ['A', 'D']:
+            self.detection_label.setText(f"Обнаружен белый цвет: нажатие клавиши {key_name}")
     
     def update_status_label(self, status_text):
         """Обновляет метку статуса"""
@@ -778,8 +796,8 @@ class BuilderApp(QWidget):
 
 def main():
     app = QApplication(sys.argv)
-    builder_app = BuilderApp()
-    builder_app.show()
+    farm_app = FarmCowsApp()
+    farm_app.show()
     sys.exit(app.exec_())
 
 if __name__ == "__main__":

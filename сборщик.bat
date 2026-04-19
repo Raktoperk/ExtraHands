@@ -1,0 +1,3 @@
+@REM pyinstaller --onefile --windowed --add-data="assets;assets" --clean --distpath ExtraHands catch_pda.py
+pyinstaller --onefile --windowed --icon=assets/icons/EHIcon.ico --add-data="assets;assets" --add-data="components;components" --hidden-import=PyQt5.sip --hidden-import=components.functions --hidden-import=components.gym_logic --clean --distpath Extra_Hands --name="Extra Hands" main.py
+@REM pyinstaller --onefile --windowed --add-data="assets;assets" --add-data="components;components" --hidden-import=PyQt5.sip --hidden-import=components.functions --hidden-import=components.gym_logic --clean --distpath ExtraHands gym.py
