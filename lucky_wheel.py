@@ -82,14 +82,16 @@ class LuckyWheelWorkerThread(QThread):
                 if not self.running:
                     break
                     
-                click_message = "Кликаю в рулетку"
-                self.status_updated.emit(click_message)
-                self.log_message.emit(click_message)
-                click_coordinates(coords["roulette"])
-                time.sleep(2)
+                # Обновили интерфейс
+
+                # click_message = "Кликаю в рулетку"
+                # self.status_updated.emit(click_message)
+                # self.log_message.emit(click_message)
+                # click_coordinates(coords["roulette"])
+                # time.sleep(2)
                 
-                if not self.running:
-                    break
+                # if not self.running:
+                #     break
                     
                 click_message = "Кликаю в колесо удачи"
                 self.status_updated.emit(click_message)

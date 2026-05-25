@@ -1,6 +1,6 @@
 lucky_wheel_coordinate = {
-            "FullHD": {"shop": (1286, 275), "roulette": (577, 335), "luckywheel": (685, 642), "spin": (972, 896),},
-            "QuadHD": {"shop": (1600, 455), "roulette": (900, 515), "luckywheel": (1080, 825), "spin": (1275, 1065),},
+            "FullHD": {"shop": (260, 470), "luckywheel": (1170, 220), "spin": (972, 896),},
+            "QuadHD": {"shop": (570, 655), "luckywheel": (1480, 400), "spin": (1275, 1065),},
         }
 
 builder_coordinate = {

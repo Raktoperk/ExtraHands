@@ -10,6 +10,7 @@ from ctypes import wintypes
 from components.functions import check_color, press_key
 from components.colors import colors
 from components.coordinates import port_coordinate
+from components.config_manager import config
 from datetime import datetime
 
 try:
@@ -548,6 +549,8 @@ class PortApp(QWidget):
         self.log_window = LogWindow()
         
         self.initUI()
+
+        self.load_settings()
         
         # Создаем и запускаем менеджер автобега после инициализации UI
         self.auto_run_manager = AutoRunManager(
@@ -787,9 +790,35 @@ class PortApp(QWidget):
     def add_log(self, message):
         """Добавляет сообщение в окно логов"""
         self.log_window.add_log(message)
+
+    def load_settings(self):
+        """Загружает сохраненные настройки"""
+        self.active_resolution = config.get("port", "resolution_mode", "FullHD")
+        auto_run = config.get("port", "auto_run", False)
+        
+        self.set_resolution(self.active_resolution)
+        self.auto_run_checkbox.setChecked(auto_run)
+        
+        # Загружаем состояние счетчика
+        counter_visible = config.get("port", "counter_visible", False)
+        if counter_visible:
+            self.counter_window.show()
+            self.counter_btn.setText("Скрыть счётчик")
+        else:
+            self.counter_window.hide()
+            self.counter_btn.setText("Показать счётчик")
+
+    def save_settings(self):
+        """Сохраняет текущие настройки"""
+        config.set_multiple("port", {
+            "resolution_mode": self.active_resolution,
+            "auto_run": self.auto_run_checkbox.isChecked(),
+            "counter_visible": self.counter_window.isVisible()
+        })
     
     def closeEvent(self, event):
         """Обработчик закрытия окна"""
+        self.save_settings()
         # Гарантируем остановку потока при закрытии окна
         if self.running:
             self.stop_task()

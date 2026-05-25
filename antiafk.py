@@ -1,4 +1,5 @@
 from components.functions import press_key, toMS
+from components.config_manager import config
 
 import random
 import time
@@ -100,6 +101,17 @@ class MainWindow(QMainWindow):
         self.bot_active = False
         self.init_ui()
         self.bot_thread.state_changed.connect(self.update_state_label)
+        self.load_settings()
+    
+    def load_settings(self):
+        """Загружает сохраненные настройки"""
+        fast_mode = config.get("antiafk", "fast_mode", False)
+        self.fast_mode_checkbox.setChecked(fast_mode)
+        self.bot_thread.set_fast_mode(fast_mode)
+    
+    def save_settings(self):
+        """Сохраняет настройки"""
+        config.set("antiafk", "fast_mode", self.fast_mode_checkbox.isChecked())
     
     def init_ui(self):
         # Настройки окна
@@ -207,7 +219,8 @@ class MainWindow(QMainWindow):
             self.bot_active = False
     
     def closeEvent(self, event):
-        """Обработчик закрытия окна - останавливаем поток"""
+        """Обработчик закрытия окна - останавливаем поток и сохраняем настройки"""
+        self.save_settings()
         if self.bot_active:
             self.bot_thread.stop_bot()
         event.accept()

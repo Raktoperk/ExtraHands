@@ -9,6 +9,7 @@ from PyQt5.QtGui import QPainter, QBrush, QColor
 from components.colors import colors
 from components.coordinates import mining_coordinate
 from components.functions import press_key, toMS
+from components.config_manager import config
 
 import time
 import random
@@ -230,6 +231,8 @@ class MiningBotApp(QWidget):
         self.counter_window = CounterWindow()
         
         self.initUI()
+
+        self.load_settings()
         
     def initUI(self):
         # Настройка окна
@@ -434,8 +437,43 @@ class MiningBotApp(QWidget):
         """Обновляет метку статуса"""
         self.status_label.setText(f"Состояние: {status_text}")
     
+    def load_settings(self):
+        """Загружает сохраненные настройки"""
+        self.resolution_mode = config.get("mining", "resolution_mode", "FullHD")
+        self.delay_between_presses = config.get("mining", "delay_between_presses", 120)
+        self.color_tolerance = config.get("mining", "color_tolerance", 10)
+        
+        # Устанавливаем значения в поля
+        self.delay_entry.setText(str(self.delay_between_presses))
+        self.set_resolution(self.resolution_mode)
+        
+        # Загружаем состояние счетчика
+        counter_visible = config.get("mining", "counter_visible", False)
+        if counter_visible:
+            self.counter_window.show()
+            self.counter_btn.setText("Скрыть счётчик")
+        else:
+            self.counter_window.hide()
+            self.counter_btn.setText("Показать счётчик")
+
+    def save_settings(self):
+        """Сохраняет текущие настройки"""
+        # Получаем текущее значение из поля ввода
+        try:
+            self.delay_between_presses = int(self.delay_entry.text())
+        except ValueError:
+            self.delay_between_presses = 120
+        
+        config.set_multiple("mining", {
+            "resolution_mode": self.resolution_mode,
+            "delay_between_presses": self.delay_between_presses,
+            "color_tolerance": self.color_tolerance,
+            "counter_visible": self.counter_window.isVisible()
+        })
+
     def closeEvent(self, event):
         """Обработчик закрытия окна"""
+        self.save_settings()
         # Гарантируем остановку потока при закрытии окна
         if self.running:
             self.stop_bot()

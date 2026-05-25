@@ -1,7 +1,8 @@
 import sys
 import webbrowser
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
-                             QHBoxLayout, QPushButton, QLabel, QFrame, QGridLayout)
+                             QHBoxLayout, QPushButton, QLabel, QFrame, QGridLayout,
+                             QMessageBox)
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont, QPalette, QColor, QIcon
 
@@ -17,6 +18,7 @@ from turner import TurnerApp
 from seamstress import SeamstressApp
 from catch_pda import CatchPDAApp
 from farm_cows import FarmCowsApp
+from components.config_manager import config
 
 class MainApp(QMainWindow):
     def __init__(self):
@@ -27,7 +29,7 @@ class MainApp(QMainWindow):
     def initUI(self):
         # Настройки главного окна
         self.setWindowTitle("Extra Hands - Бесплатный бот для всех желающих")
-        self.setGeometry(100, 100, 900, 500)  # Увеличил высоту для сетки 4x3
+        self.setGeometry(100, 100, 900, 500)
         self.setWindowIcon(QIcon('assets/icons/EHIcon.png'))
         
         # Стиль приложения
@@ -53,6 +55,21 @@ class MainApp(QMainWindow):
             QPushButton#donate_btn:pressed {
                 background-color: #ef6c00;
             }
+            QPushButton#reset_btn {
+                background-color: #9C27B0;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                padding: 8px 16px;
+                font-size: 12px;
+                font-weight: bold;
+            }
+            QPushButton#reset_btn:hover {
+                background-color: #7B1FA2;
+            }
+            QPushButton#reset_btn:pressed {
+                background-color: #6A1B9A;
+            }
             QLabel#author_label {
                 color: #aaaaaa;
                 font-size: 12px;
@@ -71,8 +88,8 @@ class MainApp(QMainWindow):
         
         # Основной layout
         main_layout = QVBoxLayout(central_widget)
-        main_layout.setContentsMargins(20, 15, 20, 15)  # Уменьшил вертикальные отступы
-        main_layout.setSpacing(15)  # Уменьшил расстояние между элементами
+        main_layout.setContentsMargins(20, 15, 20, 15)
+        main_layout.setSpacing(15)
         
         # Заголовок приложения - минимальная высота
         header_frame = QFrame()
@@ -85,16 +102,16 @@ class MainApp(QMainWindow):
         """)
         header_layout = QVBoxLayout(header_frame)
         header_layout.setContentsMargins(0, 0, 0, 0)
-        header_layout.setSpacing(3)  # Минимальный отступ
+        header_layout.setSpacing(3)
         
         title_label = QLabel("Extra Hands")
-        title_label.setFont(QFont("Arial", 30, QFont.Bold))  # Немного уменьшил шрифт
+        title_label.setFont(QFont("Arial", 30, QFont.Bold))
         title_label.setStyleSheet("color: #ffffff;")
         title_label.setAlignment(Qt.AlignCenter)
         header_layout.addWidget(title_label)
         
         subtitle_label = QLabel("Бесплатный бот для всех желающих")
-        subtitle_label.setFont(QFont("Arial", 13))  # Уменьшил шрифт подзаголовка
+        subtitle_label.setFont(QFont("Arial", 13))
         subtitle_label.setStyleSheet("color: #aaaaaa;")
         subtitle_label.setAlignment(Qt.AlignCenter)
         subtitle_label.setWordWrap(True)
@@ -137,6 +154,12 @@ class MainApp(QMainWindow):
         self.donate_btn.setCursor(Qt.PointingHandCursor)
         self.donate_btn.clicked.connect(lambda: webbrowser.open("https://donate.stream/raktoperk"))
         
+        # Кнопка сброса всех настроек
+        self.reset_btn = QPushButton("⚙️ Сбросить все настройки")
+        self.reset_btn.setObjectName("reset_btn")
+        self.reset_btn.setCursor(Qt.PointingHandCursor)
+        self.reset_btn.clicked.connect(self.reset_all_settings)
+        
         # Кнопка закрытия всех окон
         self.close_all_btn = QPushButton("❌ Закрыть все окна")
         self.close_all_btn.setStyleSheet("""
@@ -167,6 +190,7 @@ class MainApp(QMainWindow):
         footer_layout.addWidget(self.author_label)
         footer_layout.addStretch()
         footer_layout.addWidget(self.donate_btn)
+        footer_layout.addWidget(self.reset_btn)
         footer_layout.addWidget(self.close_all_btn)
         
         main_layout.addWidget(footer_frame)
@@ -182,6 +206,26 @@ class MainApp(QMainWindow):
         self.windows_label.setAlignment(Qt.AlignCenter)
         main_layout.addWidget(self.windows_label)
     
+    def reset_all_settings(self):
+        """Сброс всех настроек к значениям по умолчанию"""
+        reply = QMessageBox.question(
+            self,
+            "Сброс настроек",
+            "Вы уверены, что хотите сбросить ВСЕ настройки ботов к значениям по умолчанию?\n"
+            "Это действие нельзя отменить.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            config.reset_all()
+            QMessageBox.information(
+                self,
+                "Сброс выполнен",
+                "Все настройки сброшены до значений по умолчанию.\n"
+                "При следующем запуске ботов настройки будут загружены заново."
+            )
+    
     def create_modules_grid(self, main_layout):
         """Создает сетку с карточками модулей 4x3"""
         modules_frame = QWidget()
@@ -193,11 +237,10 @@ class MainApp(QMainWindow):
         """)
         
         modules_layout = QGridLayout(modules_frame)
-        modules_layout.setSpacing(12)  # Уменьшил расстояние между карточками
+        modules_layout.setSpacing(12)
         modules_layout.setContentsMargins(0, 0, 0, 0)
         
-        # Список модулей для сетки 4x3 (12 модулей)
-        # Добавляем 2 пустых места или дополнительные модули, если есть
+        # Список модулей для сетки 4x3
         modules_info = [
             ("🎮", "AFK+", self.open_antiafk),
             ("🎡", "Колесо удачи", self.open_lucky_wheel),
@@ -207,14 +250,9 @@ class MainApp(QMainWindow):
             ("⚓", "Порт", self.open_port),
             ("⛏️", "Шахта", self.open_mining),
             ("🐄", "Коровник", self.open_farm_cows),
-            # ("📱", "Ловля КПК", self.open_catch_pda), #Нестабилен
             ("🔧", "Токарь", self.open_turner),
             ("🧵", "Швея", self.open_seamstress),
         ]
-        
-        # Если нужно 12 модулей, добавляем 2 пустых или дополнительные
-        # Пока используем 10 модулей, сетка будет 4x3 с двумя пустыми местами
-        # Можно добавить больше модулей позже
         
         # Создаем сетку 4x3
         row, col = 0, 0
@@ -244,13 +282,13 @@ class MainApp(QMainWindow):
             modules_layout.setRowStretch(i, 1)
         
         # Добавляем модули в основной layout
-        main_layout.addWidget(modules_frame, 1)  # 1 - коэффициент растяжения
+        main_layout.addWidget(modules_frame, 1)
     
     def create_module_card(self, icon, title, callback):
         """Создает компактную карточку модуля без описания"""
         card = QPushButton()
-        card.setMinimumSize(180, 100)  # Минимальный размер
-        card.setMaximumSize(220, 120)  # Максимальный размер
+        card.setMinimumSize(180, 100)
+        card.setMaximumSize(220, 120)
         card.setStyleSheet("""
             QPushButton {
                 background-color: #2b2b2b;
@@ -306,17 +344,14 @@ class MainApp(QMainWindow):
         return card
     
     def open_farm_cows(self):
-        """Открывает модуль токаря"""
         window = FarmCowsApp()
         self.setup_window(window, "Коровник")
 
     def open_turner(self):
-        """Открывает модуль токаря"""
         window = TurnerApp()
         self.setup_window(window, "Токарь")
     
     def open_seamstress(self):
-        """Открывает модуль швеи"""
         window = SeamstressApp()
         self.setup_window(window, "Швея")
     
@@ -349,7 +384,6 @@ class MainApp(QMainWindow):
         self.setup_window(window, "Anti-AFK")
     
     def open_catch_pda(self):
-        """Открывает модуль Catch PDA"""
         window = CatchPDAApp()
         self.setup_window(window, "Catch PDA")
     

@@ -6,6 +6,7 @@ from PyQt5.QtGui import QPainter, QBrush, QColor
 
 from components.functions import detect_image, press_key, check_color
 from components.coordinates import gym_coordinate  # Добавляем импорт координат
+from components.config_manager import config
 import components.gym_logic
 import time
 import random
@@ -40,6 +41,7 @@ class CounterWindow(QWidget):
         self.total_cycles = 0  # 0 означает бесконечные подходы
         self.is_hidden = False  # Флаг для отслеживания состояния видимости
         self.initUI()
+        
         
     def initUI(self):
         # Окно поверх всех, без рамки
@@ -578,6 +580,7 @@ class GymApp(QWidget):
         self.log_window = LogWindow()
         
         self.initUI()
+        self.load_settings()
         
     def initUI(self):
         # Настройка окна
@@ -951,7 +954,58 @@ class GymApp(QWidget):
         """Обновляет метку статуса"""
         self.status_label.setText(f"Состояние: {message}")
     
+
+    def load_settings(self):
+        """Загружает сохраненные настройки"""
+        cycles = config.get("gym", "cycles", 0)
+        key_with_food = config.get("gym", "key_with_food", "5")
+        miss_chance = config.get("gym", "miss_chance", 0)
+        espander = config.get("gym", "espander", False)
+        bind_espander = config.get("gym", "bind_espander", "p")
+        min_time = config.get("gym", "min_time_between_sets", 35)
+        max_time = config.get("gym", "max_time_between_sets", 50)
+        
+        self.cycles_entry.setValue(cycles)
+        self.food_entry.setText(key_with_food)
+        self.miss_chance_entry.setValue(miss_chance)
+        self.espander_checkbox.setChecked(espander)
+        self.bind_espander_entry.setText(bind_espander)
+        self.min_time_entry.setText(str(min_time))
+        self.max_time_entry.setText(str(max_time))
+        
+        # Загружаем состояние счетчика
+        counter_visible = config.get("gym", "counter_visible", False)
+        if counter_visible:
+            self.counter_window.show()
+            self.counter_btn.setText("Скрыть счётчик")
+        else:
+            self.counter_window.hide()
+            self.counter_btn.setText("Показать счётчик")
+
+    def save_settings(self):
+        """Сохраняет текущие настройки"""
+        # Получаем текущие значения из полей
+        try:
+            min_time = float(self.min_time_entry.text()) if self.min_time_entry.text() else 35
+            max_time = float(self.max_time_entry.text()) if self.max_time_entry.text() else 50
+        except ValueError:
+            min_time = 35
+            max_time = 50
+        
+        config.set_multiple("gym", {
+            "cycles": self.cycles_entry.value(),
+            "key_with_food": self.food_entry.text().strip(),
+            "miss_chance": self.miss_chance_entry.value(),
+            "espander": self.espander_checkbox.isChecked(),
+            "bind_espander": self.bind_espander_entry.text().strip(),
+            "min_time_between_sets": min_time,
+            "max_time_between_sets": max_time,
+            "counter_visible": self.counter_window.isVisible()
+        })
+
+
     def closeEvent(self, event):
+        self.save_settings()
         """Обработчик закрытия окна"""
         # Гарантируем остановку потока при закрытии окна
         if self.running:

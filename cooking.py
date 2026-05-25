@@ -8,6 +8,8 @@ from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt5.QtGui import QPainter, QBrush, QColor
 
+from components.config_manager import config
+
 from components.coordinates import cooking_coordinate
 
 try:
@@ -32,6 +34,7 @@ class CounterWindow(QWidget):
         super().__init__()
         self.counter = 0
         self.initUI()
+        self.load_settings()
         
     def initUI(self):
         # Окно поверх всех, без рамки
@@ -626,15 +629,48 @@ class CookingBotApp(QWidget):
         """Обновляет метку статуса"""
         self.status_label.setText(f"Состояние: {status_text}")
     
+    def load_settings(self):
+        """Загружает сохраненные настройки"""
+        self.resolution_mode = config.get("cooking", "resolution_mode", "FullHD")
+        cycles = config.get("cooking", "cycles", 1)
+        self.cycles_entry.setText(str(cycles))
+        self.set_resolution(self.resolution_mode)
+        
+        # Загружаем сохраненную последовательность
+        saved_sequence = config.load_sequence("cooking")
+        if saved_sequence:
+            cells = cooking_coordinate.get(self.resolution_mode, cooking_coordinate["FullHD"])
+            for action in saved_sequence:
+                if action in cells:
+                    self.sequence.append((action, cells[action]))
+            self.update_sequence_display()
+        
+        # Загружаем состояние счетчика
+        counter_visible = config.get("cooking", "counter_visible", False)
+        if counter_visible:
+            self.counter_window.show()
+            self.counter_btn.setText("Скрыть счётчик")
+        else:
+            self.counter_window.hide()
+            self.counter_btn.setText("Показать счётчик")
+
+    def save_settings(self):
+        """Сохраняет текущие настройки"""
+        sequence_names = [action for action, _ in self.sequence]
+        config.save_sequence("cooking", sequence_names)
+        
+        config.set_multiple("cooking", {
+            "resolution_mode": self.resolution_mode,
+            "cycles": int(self.cycles_entry.text()) if self.cycles_entry.text().isdigit() else 1,
+            "counter_visible": self.counter_window.isVisible()
+        })
+
     def closeEvent(self, event):
         """Обработчик закрытия окна"""
-        # Останавливаем готовку
+        self.save_settings()
         if self.running:
             self.stop_cooking()
-        
-        # Закрываем окно счетчика
         self.counter_window.close()
-        
         event.accept()
 
 def main():

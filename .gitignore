@@ -4,3 +4,8 @@ other
 Extra_Hands
 build
 __pycache__
+directory.py
+*.json
+*.json.backup
+*.txt
+*.spec
