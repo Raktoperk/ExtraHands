@@ -1,6 +1,8 @@
-Extra_Hands.zip
-ExtraHands.spec
+*.zip
+*.7z
+*.rar
 other
+dist
 Extra_Hands
 build
 __pycache__
@@ -8,4 +10,5 @@ directory.py
 *.json
 *.json.backup
 *.txt
-*.spec
+*.bat
+test.py

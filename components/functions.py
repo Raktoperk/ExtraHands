@@ -1,181 +1,260 @@
+"""
+Общие утилитарные функции для ботов
+Оптимизированные версии с типизацией
+"""
+
 import ctypes
 import time
 import random
-from .key_codes import LAYOUT_MAP
-import keyboard as Key
+from typing import Tuple, Optional, Union, List
+
 import pyautogui
-import numpy as np
 import cv2
+import numpy as np
+import keyboard  # ← импорт на уровне модуля (оптимизация)
 
-# Конвертация в миллисекунды
-
-def toMS(num = 1):
-    return num / 1000 # Просто делит введённое число на 1000 (1с = 0.001мс)
+from components.key_codes import LAYOUT_MAP
+from components.constants import PRESS_KEY_DURATION, COLOR_TOLERANCE_NORMAL
 
 
+def to_ms(seconds: float) -> float:
+    """Конвертирует секунды в миллисекунды (фактически просто возвращает значение)"""
+    return seconds
 
-# Нажатие физической клавиши с определённой задержкой
 
-def get_keyboard_layout():
-    """Определяет текущую раскладку клавиатуры"""
+def get_keyboard_layout() -> str:
+    """
+    Определяет текущую раскладку клавиатуры
+    
+    Returns:
+        'ru' для русской, 'en' для английской
+    """
     try:
-        # Получаем дескриптор активного окна
         hwnd = ctypes.windll.user32.GetForegroundWindow()
-        
-        # Получаем ID потока окна
         thread_id = ctypes.windll.user32.GetWindowThreadProcessId(hwnd, 0)
-        
-        # Получаем раскладку клавиатуры для потока
         layout_id = ctypes.windll.user32.GetKeyboardLayout(thread_id)
-        
-        # Младшее слово содержит код языка (0x409 - английский, 0x419 - русский)
         lang_id = layout_id & 0xFFFF
         
         if lang_id == 0x419:  # Русский
             return 'ru'
-        elif lang_id == 0x409:  # Английский (США)
-            return 'en'
         else:
-            # По умолчанию считаем английской
             return 'en'
-    except:
-        # В случае ошибки считаем английской раскладкой
+    except Exception:
         return 'en'
 
 
-def convert_key_for_layout(key, target_layout='en'):
+def convert_key_for_layout(key: str, target_layout: str = 'en') -> str:
     """
     Преобразует клавишу для нужной раскладки
-    target_layout: 'en' - для нажатия, 'ru' - для отображения
+    
+    Args:
+        key: Клавиша для преобразования
+        target_layout: Целевая раскладка ('en' или 'ru')
+    
+    Returns:
+        Преобразованная клавиша
     """
     if not isinstance(key, str) or len(key) != 1:
         return key
     
-    # Если целевая раскладка английская, конвертируем русские символы в английские
     if target_layout == 'en':
-        # Проверяем, является ли символ русским
-        if key in LAYOUT_MAP:
-            return LAYOUT_MAP[key]
+        return LAYOUT_MAP.get(key, key)
     
-    # Если целевая раскладка русская или символ не найден, возвращаем как есть
     return key
 
 
-
-def press_key(key, boundary=(toMS(60), toMS(140)), use_ctypes=False):
-    """Нажатие клавиши с учётом текущей раскладки"""
+def press_key(key: str, boundary: Tuple[float, float] = PRESS_KEY_DURATION) -> None:
+    """
+    Нажатие клавиши с учётом текущей раскладки
     
-    # Определяем текущую раскладку
+    Args:
+        key: Клавиша для нажатия
+        boundary: Диапазон времени удержания (мин, макс) в секундах
+    """
     current_layout = get_keyboard_layout()
     
-    # Преобразуем клавишу, если нужно
+    # Преобразование для русской раскладки
     if current_layout == 'ru':
-        # Если раскладка русская, преобразуем русские символы в английские
-        # для правильного нажатия физических клавиш
         key_to_press = convert_key_for_layout(key, target_layout='en')
     else:
-        # Для английской раскладки оставляем как есть
         key_to_press = key
     
-    # Если key_to_press - строка из нескольких символов (комбинация),
-    # обрабатываем каждый символ отдельно
+    # Обработка комбинаций клавиш
     if isinstance(key_to_press, str) and '+' in key_to_press:
         parts = key_to_press.split('+')
         for part in parts:
-            # Преобразуем каждую часть, если это одиночный символ
             if len(part) == 1:
                 part = convert_key_for_layout(part, target_layout='en')
-            Key.press(part)
-            time.sleep(random.uniform(*boundary) / len(parts))  # Распределяем задержку
+            keyboard.press(part)
+            time.sleep(random.uniform(*boundary) / len(parts))
         for part in reversed(parts):
             if len(part) == 1:
                 part = convert_key_for_layout(part, target_layout='en')
-            Key.release(part)
+            keyboard.release(part)
     else:
-        # Одиночная клавиша
-        Key.press(key_to_press)
+        keyboard.press(key_to_press)
         time.sleep(random.uniform(*boundary))
-        Key.release(key_to_press)
+        keyboard.release(key_to_press)
 
 
-# Дополнительная функция для печати текста с учётом раскладки
-def type_text(text, delay_between_keys=(toMS(60), toMS(140))):
-    """Печатает текст с учётом текущей раскладки клавиатуры"""
-    current_layout = get_keyboard_layout()
-    
-    for char in text:
-        if current_layout == 'ru':
-            # Преобразуем каждый символ для английской раскладки
-            key_to_press = convert_key_for_layout(char, target_layout='en')
-        else:
-            key_to_press = char
-        
-        press_key(key_to_press, boundary=delay_between_keys)
-
-
-# Клик ЛКМ в заданных координатах
-
-def click_coordinates(coordinates):
-    pyautogui.click(coordinates[0], coordinates[1])
-
-
-# Проверка заданного цвета в заданных координатах
-
-def check_color(coordinates=(0, 0), color=(0, 0, 0), tolerance=0):
+def click_coordinates(coordinates: Tuple[int, int], 
+                      button: str = 'left', 
+                      duration: float = 0.1) -> None:
     """
-    Проверяет соответствие цвета пикселя в заданных координатах.
+    Клик в заданных координатах
     
     Args:
-        coordinates (tuple): Координаты (x, y) для проверки
-        color (tuple): Ожидаемый цвет (r, g, b)
-        tolerance (int): Допустимая погрешность для каждого канала цвета (0-255)
+        coordinates: Координаты (x, y)
+        button: Кнопка мыши ('left', 'right', 'middle')
+        duration: Длительность перемещения
+    """
+    pyautogui.moveTo(coordinates[0], coordinates[1], duration=duration)
+    pyautogui.click(button=button)
+
+
+def check_color(coordinates: Tuple[int, int], 
+                color: Tuple[int, int, int], 
+                tolerance: int = COLOR_TOLERANCE_NORMAL) -> bool:
+    """
+    Проверяет цвет пикселя в заданных координатах
+    
+    Args:
+        coordinates: Координаты (x, y)
+        color: Ожидаемый цвет (r, g, b)
+        tolerance: Допустимая погрешность для каждого канала
     
     Returns:
-        bool: True если цвет соответствует с учётом погрешности, иначе False
+        True если цвет соответствует с учётом погрешности
     """
     try:
-        # Получаем текущий цвет пикселя
-        current_color = pyautogui.pixel(*coordinates)
-        
-        # Если погрешность равна 0, используем точное сравнение
         if tolerance == 0:
-            return pyautogui.pixelMatchesColor(*coordinates, color)
+            return pyautogui.pixelMatchesColor(coordinates[0], coordinates[1], color)
         
-        # Сравниваем цвета с учётом погрешности
-        for current_channel, expected_channel in zip(current_color, color):
-            if abs(current_channel - expected_channel) > tolerance:
+        current_color = pyautogui.pixel(coordinates[0], coordinates[1])
+        for cur, exp in zip(current_color, color):
+            if abs(cur - exp) > tolerance:
                 return False
         return True
-        
-    except Exception as e:
-        print(f"Ошибка при проверке цвета: {e}")
+    except Exception:
         return False
 
-# Поиск заданного изображения на экране и определение координат его центра
 
-def detect_image(template_path, threshold=0.8): # (Задаваемое изображение, точность соответствия)
-        # Загрузка изображения
-        template = cv2.imread(template_path, 0)
-
-        # Проверка наличия изображения        
-        # if template is None:
-        #     print(f"Ошибка: Не удалось загрузить изображение по пути {template_path}")
-        #     return None
+def detect_image(template_path: str, 
+                 threshold: float = 0.8,
+                 region: Optional[Tuple[int, int, int, int]] = None) -> Optional[Tuple[int, int]]:
+    """
+    Поиск изображения на экране
+    
+    Args:
+        template_path: Путь к шаблону
+        threshold: Порог уверенности (0-1)
+        region: Область поиска (left, top, width, height)
+    
+    Returns:
+        Координаты центра изображения или None
+    """
+    try:
+        template = cv2.imread(template_path, cv2.IMREAD_GRAYSCALE)
+        if template is None:
+            return None
         
-        # Обработка изображения
-        screenshot = pyautogui.screenshot()
-        screenshot = np.array(screenshot)
-        screenshot = cv2.cvtColor(screenshot, cv2.COLOR_RGB2BGR)
-        screenshot_gray = cv2.cvtColor(screenshot, cv2.COLOR_BGR2GRAY)
-
+        # Захват экрана
+        if region:
+            screenshot = pyautogui.screenshot(region=region)
+        else:
+            screenshot = pyautogui.screenshot()
+        
+        screenshot_gray = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2GRAY)
+        
+        # Поиск
         result = cv2.matchTemplate(screenshot_gray, template, cv2.TM_CCOEFF_NORMED)
         _, max_val, _, max_loc = cv2.minMaxLoc(result)
+        
+        if max_val >= threshold:
+            h, w = template.shape
+            return (max_loc[0] + w // 2, max_loc[1] + h // 2)
+        
+        return None
+    except Exception:
+        return None
 
-        w, h = template.shape[:2] # Опредение разрешения исходного изображения
 
-        center = (max_loc[0] + w // 2, max_loc[1] + h // 2) # Подсчёт центральных координат
+def wait_for_color(coordinates: Tuple[int, int],
+                   color: Tuple[int, int, int],
+                   timeout: float = 30.0,
+                   check_interval: float = 0.1,
+                   tolerance: int = COLOR_TOLERANCE_NORMAL) -> bool:
+    """
+    Ожидает появления заданного цвета
+    
+    Args:
+        coordinates: Координаты для проверки
+        color: Ожидаемый цвет
+        timeout: Таймаут в секундах
+        check_interval: Интервал проверки
+        tolerance: Допуск цвета
+    
+    Returns:
+        True если цвет появился в течение таймаута
+    """
+    elapsed = 0.0
+    while elapsed < timeout:
+        if check_color(coordinates, color, tolerance):
+            return True
+        time.sleep(check_interval)
+        elapsed += check_interval
+    return False
 
-        if max_val >= threshold: # Если соответствует, то выведет координаты центра, иначе "None"
-            return center 
-        else:
-            return None
+
+def wait_for_color_disappear(coordinates: Tuple[int, int],
+                              color: Tuple[int, int, int],
+                              timeout: float = 30.0,
+                              check_interval: float = 0.1,
+                              tolerance: int = COLOR_TOLERANCE_NORMAL) -> bool:
+    """
+    Ожидает исчезновения заданного цвета
+    
+    Args:
+        coordinates: Координаты для проверки
+        color: Проверяемый цвет
+        timeout: Таймаут в секундах
+        check_interval: Интервал проверки
+        tolerance: Допуск цвета
+    
+    Returns:
+        True если цвет исчез в течение таймаута
+    """
+    elapsed = 0.0
+    while elapsed < timeout:
+        if not check_color(coordinates, color, tolerance):
+            return True
+        time.sleep(check_interval)
+        elapsed += check_interval
+    return False
+
+
+def get_screen_resolution() -> Tuple[int, int]:
+    """
+    Возвращает текущее разрешение экрана
+    
+    Returns:
+        Кортеж (width, height)
+    """
+    screen = pyautogui.size()
+    return screen.width, screen.height
+
+
+def detect_resolution_mode() -> str:
+    """
+    Определяет режим разрешения экрана
+    
+    Returns:
+        'FullHD' для 1920x1080, 'QuadHD' для 2560x1440, иначе 'FullHD'
+    """
+    width, height = get_screen_resolution()
+    if width == 1920 and height == 1080:
+        return "FullHD"
+    elif width == 2560 and height == 1440:
+        return "QuadHD"
+    else:
+        return "FullHD"

@@ -1,750 +1,417 @@
-from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, 
-                             QPushButton, QLabel, QFrame, QLineEdit, QTextEdit, QGroupBox)
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
+"""
+Бот для автоматизации швеи (последовательный кликер)
+Работает только на основе общего времени выполнения
+"""
+
 import sys
 import time
 import random
 import os
-from datetime import datetime
+from typing import Optional, Dict, Tuple
 
-try:
-    from components.styles import *
-except ImportError:
-    COLORS = {
-        "primary": "#00adb5",
-        "primary_hover": "#0098a0",
-        "primary_pressed": "#01959c",
-        "accent": "#ff9800",
-        "accent_hover": "#f57c00",
-        "accent_pressed": "#ef6c00",
-        "danger": "#ca162e",
-        "danger_hover": "#be0f27",
-        "danger_pressed": "#b41227",
-        "bg_dark": "#2b2b2b",
-        "bg_medium": "#3c3c3c",
-        "bg_light": "#1e1e1e",
-        "text_primary": "#ffffff",
-        "text_secondary": "#cccccc",
-        "text_muted": "#aaaaaa",
-        "text_error": "#ff9999",
-        "border": "#555555",
-    }
+from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
+                             QPushButton, QLabel, QFrame, QLineEdit)
+from PyQt5.QtCore import Qt
+
+from components.base_bot import BaseBotApp, BaseWorker
+from components.config_manager import config
+from components.styles import FRAME_STYLES, BUTTON_STYLES, LABEL_STYLES, INPUT_STYLES
+
 
 if getattr(sys, 'frozen', False):
     BASE_DIR = os.path.dirname(sys.executable)
 else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-class LogWindow(QWidget):
-    def __init__(self):
-        super().__init__()
-        self.log_count = 0
-        self.error_count = 0
-        self.initUI()
-        
-    def initUI(self):
-        self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.CustomizeWindowHint | Qt.WindowTitleHint)
-        self.setWindowFlag(Qt.WindowCloseButtonHint, False)
-        
-        self.setWindowTitle("Логи швеи")
-        self.setFixedSize(700, 400)
-        self.setStyleSheet(f"background-color: {COLORS['bg_dark']};")
-        
-        main_layout = QVBoxLayout()
-        main_layout.setContentsMargins(10, 10, 10, 10)
-        main_layout.setSpacing(5)
-        
-        # Верхняя панель
-        top_panel = QHBoxLayout()
-        
-        clear_all_btn = QPushButton("Очистить всё")
-        clear_all_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {COLORS["accent"]};
-                color: {COLORS["text_primary"]};
-                border: none;
-                border-radius: 8px;
-                padding: 8px 16px;
-                font-size: 12px;
-                font-weight: bold;
-            }}
-            QPushButton:hover {{ background-color: {COLORS["accent_hover"]}; }}
-            QPushButton:pressed {{ background-color: {COLORS["accent_pressed"]}; }}
-        """)
-        clear_all_btn.clicked.connect(self.clear_all_logs)
-        top_panel.addWidget(clear_all_btn)
-        
-        clear_errors_btn = QPushButton("Очистить ошибки")
-        clear_errors_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {COLORS["danger"]};
-                color: {COLORS["text_primary"]};
-                border: none;
-                border-radius: 8px;
-                padding: 8px 16px;
-                font-size: 12px;
-                font-weight: bold;
-            }}
-            QPushButton:hover {{ background-color: {COLORS["danger_hover"]}; }}
-            QPushButton:pressed {{ background-color: {COLORS["danger_pressed"]}; }}
-        """)
-        clear_errors_btn.clicked.connect(self.clear_errors)
-        top_panel.addWidget(clear_errors_btn)
-        
-        top_panel.addStretch()
-        main_layout.addLayout(top_panel)
-        
-        # Основное содержимое
-        content_layout = QHBoxLayout()
-        content_layout.setSpacing(10)
-        
-        # Логи
-        log_group = QGroupBox("Логи")
-        log_group.setStyleSheet(f"""
-            QGroupBox {{
-                color: {COLORS["text_primary"]};
-                font-size: 12px;
-                font-weight: bold;
-                border: 1px solid {COLORS["border"]};
-                border-radius: 5px;
-                margin-top: 10px;
-                padding-top: 10px;
-            }}
-        """)
-        
-        log_layout = QVBoxLayout(log_group)
-        self.log_text = QTextEdit()
-        self.log_text.setReadOnly(True)
-        self.log_text.setStyleSheet(f"""
-            QTextEdit {{
-                background-color: {COLORS["bg_light"]};
-                color: {COLORS["text_primary"]};
-                border: 1px solid {COLORS["border"]};
-                border-radius: 5px;
-                font-family: Consolas, 'Courier New', monospace;
-                font-size: 11px;
-                padding: 5px;
-            }}
-        """)
-        log_layout.addWidget(self.log_text)
-        
-        # Ошибки
-        error_group = QGroupBox("Ошибки")
-        error_group.setStyleSheet(f"""
-            QGroupBox {{
-                color: {COLORS["text_error"]};
-                font-size: 12px;
-                font-weight: bold;
-                border: 1px solid #ff4444;
-                border-radius: 5px;
-                margin-top: 10px;
-                padding-top: 10px;
-            }}
-        """)
-        
-        error_layout = QVBoxLayout(error_group)
-        self.error_text = QTextEdit()
-        self.error_text.setReadOnly(True)
-        self.error_text.setStyleSheet(f"""
-            QTextEdit {{
-                background-color: #2a1a1a;
-                color: {COLORS["text_error"]};
-                border: 1px solid #ff4444;
-                border-radius: 5px;
-                font-family: Consolas, 'Courier New', monospace;
-                font-size: 11px;
-                padding: 5px;
-            }}
-        """)
-        error_layout.addWidget(self.error_text)
-        
-        content_layout.addWidget(log_group, 1)
-        content_layout.addWidget(error_group, 1)
-        main_layout.addLayout(content_layout)
-        
-        # Статистика
-        stats_layout = QHBoxLayout()
-        
-        self.log_count_label = QLabel("Логов: 0")
-        self.log_count_label.setStyleSheet(f"""
-            QLabel {{
-                color: {COLORS["text_primary"]};
-                font-size: 11px;
-                font-weight: bold;
-                padding: 3px 8px;
-                background-color: #333333;
-                border-radius: 3px;
-            }}
-        """)
-        stats_layout.addWidget(self.log_count_label)
-        
-        self.error_count_label = QLabel("Ошибок: 0")
-        self.error_count_label.setStyleSheet(f"""
-            QLabel {{
-                color: {COLORS["text_error"]};
-                font-size: 11px;
-                font-weight: bold;
-                padding: 3px 8px;
-                background-color: #442222;
-                border-radius: 3px;
-            }}
-        """)
-        stats_layout.addWidget(self.error_count_label)
-        
-        stats_layout.addStretch()
-        
-        copy_errors_btn = QPushButton("Копировать ошибки")
-        copy_errors_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {COLORS["primary"]};
-                color: {COLORS["text_primary"]};
-                border: none;
-                border-radius: 6px;
-                padding: 8px 16px;
-                font-size: 12px;
-                font-weight: bold;
-            }}
-            QPushButton:hover {{ background-color: {COLORS["primary_hover"]}; }}
-            QPushButton:pressed {{ background-color: {COLORS["primary_pressed"]}; }}
-        """)
-        copy_errors_btn.clicked.connect(self.copy_errors_to_clipboard)
-        stats_layout.addWidget(copy_errors_btn)
-        
-        main_layout.addLayout(stats_layout)
-        self.setLayout(main_layout)
-    
-    def add_log(self, message):
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        log_entry = f"[{timestamp}] {message}"
-        self.log_text.append(log_entry)
-        self.log_text.verticalScrollBar().setValue(self.log_text.verticalScrollBar().maximum())
-        
-        self.log_count += 1
-        self.log_count_label.setText(f"Логов: {self.log_count}")
-        
-        # Проверка на ошибку
-        error_keywords = ['ОШИБКА', 'ERROR', 'EXCEPTION', 'FAIL', 'FAILED', 'КРИТИЧЕСКАЯ', 'WARNING', 'ВНИМАНИЕ']
-        if any(keyword in message.upper() for keyword in error_keywords):
-            self.add_error(message)
-    
-    def add_error(self, message):
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        self.error_text.append(f"[{timestamp}] {message}")
-        self.error_text.verticalScrollBar().setValue(self.error_text.verticalScrollBar().maximum())
-        
-        self.error_count += 1
-        self.error_count_label.setText(f"Ошибок: {self.error_count}")
-    
-    def clear_all_logs(self):
-        self.log_text.clear()
-        self.error_text.clear()
-        self.log_count = 0
-        self.error_count = 0
-        self.log_count_label.setText("Логов: 0")
-        self.error_count_label.setText("Ошибок: 0")
-    
-    def clear_errors(self):
-        self.error_text.clear()
-        self.error_count = 0
-        self.error_count_label.setText("Ошибок: 0")
-    
-    def copy_errors_to_clipboard(self):
-        errors = self.error_text.toPlainText()
-        if errors:
-            clipboard = QApplication.clipboard()
-            clipboard.setText(errors)
-            
-            btn = self.sender()
-            if btn:
-                original_text = btn.text()
-                btn.setText("Скопировано!")
-                from PyQt5.QtCore import QTimer
-                QTimer.singleShot(1500, lambda: btn.setText(original_text))
+IMAGES_FOLDER = os.path.join(BASE_DIR, "assets", "seamstress")
 
-class SeamstressWorker(QThread):
-    log_message = pyqtSignal(str)
-    status_updated = pyqtSignal(str)
-    action_updated = pyqtSignal(str)
+
+class SeamstressWorker(BaseWorker):
+    """Рабочий поток для швеи"""
     
-    def __init__(self, total_time_sec, images_folder, min_delay=0.1, max_delay=0.3):
+    action_updated = BaseWorker.status_updated
+    
+    def __init__(self, total_time_sec: int):
+        """
+        Args:
+            total_time_sec: Общее время работы бота в секундах
+        """
         super().__init__()
-        self.running = True
-        self.total_time_sec = total_time_sec
-        self.images_folder = images_folder
-        self.min_delay = min_delay
-        self.max_delay = max_delay
-        self.pyautogui = None
-        self.coordinates = {}
-        
-    def init_pyautogui(self):
-        """Ленивая инициализация pyautogui"""
-        if self.pyautogui is None:
-            import pyautogui
-            self.pyautogui = pyautogui
-            self.pyautogui.PAUSE = 0.1
-            self.pyautogui.FAILSAFE = False
+        self._total_time_sec = total_time_sec
+        self._pyautogui = None
+        self._coordinates: Dict[str, Tuple[int, int]] = {}
+        self._delay_between_clicks = 0.1  # Базовая задержка, будет пересчитана
     
-    def find_image(self, image_name):
-        """Ищет изображение на экране с разными уровнями уверенности"""
+    def _calculate_delays(self, cycles_count: int) -> None:
+        """
+        Рассчитывает задержки на основе общего времени выполнения
+        
+        Args:
+            cycles_count: Количество циклов, которые планируется выполнить
+        """
+        if cycles_count <= 0:
+            return
+        
+        # В одном цикле:
+        # - 1 клик по 1.png
+        # - 18 двойных кликов (2-19.png)
+        # - 1 клик по 20.png
+        # Итого: 20 действий
+        
+        actions_per_cycle = 20
+        total_actions = cycles_count * actions_per_cycle
+        
+        # Общее время на все действия (без учета времени поиска)
+        search_time_per_cycle = 1.5
+        available_time = max(1, self._total_time_sec - (cycles_count * search_time_per_cycle))
+        
+        if available_time <= 0:
+            self._delay_between_clicks = 0.05
+        else:
+            # Время на одно действие
+            self._delay_between_clicks = available_time / total_actions
+            # Ограничиваем разумными пределами
+            self._delay_between_clicks = max(0.05, min(0.5, self._delay_between_clicks))
+        
+        self.log_message.emit(
+            f"Расчет задержек: {cycles_count} циклов, {total_actions} действий, "
+            f"{available_time:.1f}с доступно → {self._delay_between_clicks:.3f}с на действие"
+        )
+    
+    def _get_click_delay(self) -> float:
+        """
+        Возвращает задержку с погрешностью ±5-10 мс
+        
+        Базовая задержка рассчитывается из общего времени выполнения,
+        а погрешность добавляется в миллисекундах для естественности
+        """
+        if self._delay_between_clicks <= 0:
+            return 0.05
+        
+        # Погрешность в миллисекундах (конвертируем в секунды)
+        ms_variation = random.uniform(5, 15) / 1000  # 5-15 мс
+        
+        # Добавляем или вычитаем случайное значение
+        if random.choice([True, False]):
+            delay = self._delay_between_clicks + ms_variation
+        else:
+            delay = self._delay_between_clicks - ms_variation
+        
+        # Ограничиваем разумными пределами
+        return max(0.04, min(0.5, delay))
+    
+    def _init_pyautogui(self) -> None:
+        """Ленивая инициализация pyautogui"""
+        if self._pyautogui is None:
+            import pyautogui
+            self._pyautogui = pyautogui
+            self._pyautogui.PAUSE = 0
+            self._pyautogui.FAILSAFE = False
+    
+    def _find_image(self, image_name: str) -> Optional[Tuple[int, int, float]]:
+        """Ищет изображение на экране"""
         try:
-            filepath = os.path.join(self.images_folder, image_name)
+            filepath = os.path.join(IMAGES_FOLDER, image_name)
+            if not os.path.exists(filepath):
+                return None
+            
             for confidence in [0.9, 0.85, 0.8, 0.75]:
                 try:
-                    location = self.pyautogui.locateOnScreen(filepath, confidence=confidence)
+                    location = self._pyautogui.locateOnScreen(filepath, confidence=confidence)
                     if location:
                         x = location.left + location.width // 2
                         y = location.top + location.height // 2
                         return (x, y, confidence)
-                except self.pyautogui.ImageNotFoundException:
+                except Exception:
                     continue
         except Exception as e:
-            self.log_message.emit(f"Ошибка при поиске {image_name}: {e}")
+            self.log_message.emit(f"Ошибка поиска {image_name}: {e}")
         return None
     
-    def click_at_position(self, x, y, click_type="left", delay=0.1):
-        """Выполняет клик по указанным координатам"""
+    def _click_at(self, x: int, y: int, click_type: str = "left") -> bool:
+        """Выполняет клик с рассчитанной задержкой"""
         try:
-            move_duration = random.uniform(0.15, 0.3)
-            self.pyautogui.moveTo(x, y, duration=move_duration)
-            time.sleep(0.1)
+            move_duration = random.uniform(0.05, 0.1)
+            self._pyautogui.moveTo(x, y, duration=move_duration)
+            time.sleep(0.01)
             
-            if click_type == "left":
-                self.pyautogui.click(button='left')
-            elif click_type == "double":
-                self.pyautogui.click()
-                time.sleep(random.uniform(0.3, 0.8))
-                self.pyautogui.click()
+            if click_type == "double":
+                self._pyautogui.doubleClick()
+                delay = self._get_click_delay() + 0.01
+            else:
+                self._pyautogui.click(button='left')
+                delay = self._get_click_delay()
             
             time.sleep(delay)
             return True
         except Exception as e:
-            self.log_message.emit(f"Ошибка при клике: {e}")
+            self.log_message.emit(f"Ошибка клика: {e}")
             return False
     
-    def execute_click_sequence(self):
+    def _execute_click_sequence(self) -> None:
         """Выполняет последовательность кликов"""
-        self.log_message.emit("Начинаю последовательность кликов...")
+        self.log_message.emit(f"Выполняю последовательность (базовая задержка: {self._delay_between_clicks:.3f}с)...")
         
         # Клик по 1.png
-        if "1.png" in self.coordinates:
-            x, y = self.coordinates["1.png"]
-            self.action_updated.emit(f"Клик по 1.png")
-            self.click_at_position(x, y, "left", 0.3)
+        if "1.png" in self._coordinates:
+            x, y = self._coordinates["1.png"]
+            self.status_updated.emit("Клик по 1.png")
+            self._click_at(x, y, "left")
         
         # Двойные клики по 2-19.png
         for i in range(2, 20):
-            if not self.running:
+            if not self.is_running:
                 break
-                
+            
             filename = f"{i}.png"
-            if filename in self.coordinates:
-                self.action_updated.emit(f"Двойной клик по {filename}")
-                x, y = self.coordinates[filename]
-                self.click_at_position(x, y, "double", 0.2)
-                
-                if i < 19:
-                    time.sleep(random.uniform(self.min_delay, self.max_delay))
+            if filename in self._coordinates:
+                self.status_updated.emit(f"Двойной клик по {filename}")
+                x, y = self._coordinates[filename]
+                self._click_at(x, y, "double")
         
         # Клик по 20.png
-        if "20.png" in self.coordinates:
-            x, y = self.coordinates["20.png"]
-            self.action_updated.emit("Клик по 20.png")
-            self.click_at_position(x, y, "left", 0.2)
-        
-        self.log_message.emit("Последовательность завершена!")
+        if "20.png" in self._coordinates:
+            x, y = self._coordinates["20.png"]
+            self.status_updated.emit("Клик по 20.png")
+            self._click_at(x, y, "left")
     
-    def run(self):
-        self.init_pyautogui()
-        self.log_message.emit("Запуск потока швеи")
-        self.status_updated.emit("Ожидание 1.png...")
+    def run(self) -> None:
+        """Основной цикл потока"""
+        self._init_pyautogui()
+        self.log_message.emit(f"Запуск потока швеи. Общее время: {self._total_time_sec} сек")
         
         cycle_count = 0
+        start_time = time.time()
         
-        while self.running:
-            try:
-                cycle_count += 1
-                self.log_message.emit(f"Цикл #{cycle_count}")
-                
-                # Ожидание 1.png
-                found_1 = False
-                while self.running and not found_1:
-                    self.action_updated.emit("Поиск 1.png...")
-                    result = self.find_image("1.png")
-                    
-                    if result:
-                        x, y, confidence = result
-                        self.log_message.emit(f"✓ Найдено: 1.png ({confidence:.2f})")
-                        found_1 = True
-                        self.coordinates = {"1.png": (x, y)}
-                        break
-                    
-                    time.sleep(0.3)
-                
-                if not self.running:
+        # Первоначальная оценка количества возможных циклов
+        estimated_cycles = max(1, self._total_time_sec // 3)
+        self._calculate_delays(estimated_cycles)
+        
+        while self.is_running:
+            # Проверка времени выполнения
+            elapsed = time.time() - start_time
+            if elapsed >= self._total_time_sec:
+                self.log_message.emit(f"Достигнуто время выполнения ({self._total_time_sec} сек)")
+                break
+            
+            cycle_count += 1
+            self.log_message.emit(f"Цикл #{cycle_count}")
+            
+            # Ожидание 1.png
+            found_1 = False
+            while self.is_running and not found_1:
+                if time.time() - start_time >= self._total_time_sec:
                     break
                 
-                # Поиск остальных изображений
-                found_count = 1
-                for i in range(2, 21):
-                    if not self.running:
-                        break
-                        
-                    filename = f"{i}.png"
-                    self.action_updated.emit(f"Поиск {filename}...")
-                    
-                    result = self.find_image(filename)
-                    if result:
-                        x, y, confidence = result
-                        self.log_message.emit(f"✓ Найдено: {filename} ({confidence:.2f})")
-                        self.coordinates[filename] = (x, y)
-                        found_count += 1
-                        time.sleep(random.uniform(0.05, 0.15))
+                self.status_updated.emit("Поиск 1.png...")
+                result = self._find_image("1.png")
                 
-                self.log_message.emit(f"Найдено: {found_count}/20")
+                if result:
+                    x, y, confidence = result
+                    self.log_message.emit(f"✓ Найдено: 1.png ({confidence:.2f})")
+                    found_1 = True
+                    self._coordinates = {"1.png": (x, y)}
+                    break
                 
-                if found_count >= 2:
-                    self.execute_click_sequence()
-                    self.status_updated.emit(f"Цикл #{cycle_count} завершен")
-                    
-                    # Ожидание перед следующим циклом
-                    if self.total_time_sec > 0:
-                        remaining = self.total_time_sec
-                        while self.running and remaining > 0:
-                            self.status_updated.emit(f"Ожидание: {remaining} сек")
-                            time.sleep(1)
-                            remaining -= 1
-                else:
-                    self.log_message.emit("Недостаточно изображений. Пропускаю цикл.")
-                    time.sleep(2)
-                    
-            except Exception as e:
-                self.log_message.emit(f"Ошибка в цикле: {e}")
-                import traceback
-                traceback.print_exc()
-                time.sleep(5)
+                time.sleep(0.1)
+            
+            if not self.is_running:
+                break
+            
+            if time.time() - start_time >= self._total_time_sec:
+                break
+            
+            # Поиск остальных изображений
+            found_count = 1
+            for i in range(2, 21):
+                if not self.is_running:
+                    break
+                
+                if time.time() - start_time >= self._total_time_sec:
+                    break
+                
+                filename = f"{i}.png"
+                self.status_updated.emit(f"Поиск {filename}...")
+                result = self._find_image(filename)
+                
+                if result:
+                    x, y, confidence = result
+                    self.log_message.emit(f"✓ Найдено: {filename} ({confidence:.2f})")
+                    self._coordinates[filename] = (x, y)
+                    found_count += 1
+                    time.sleep(0.02)
+            
+            self.log_message.emit(f"Найдено: {found_count}/20")
+            
+            if found_count >= 2:
+                # Корректируем задержки на основе реального прогресса
+                elapsed = time.time() - start_time
+                remaining_time = max(1, self._total_time_sec - elapsed)
+                remaining_cycles_estimate = max(1, remaining_time // 2)
+                self._calculate_delays(cycle_count + remaining_cycles_estimate)
+                
+                self._execute_click_sequence()
+                self.status_updated.emit(f"Цикл #{cycle_count} завершен")
+            else:
+                self.log_message.emit("Недостаточно изображений. Пропускаю цикл.")
+                time.sleep(0.3)
         
-        self.log_message.emit("Поток швеи остановлен")
-    
-    def stop(self):
-        self.running = False
+        elapsed_total = time.time() - start_time
+        self.log_message.emit(f"Поток швеи остановлен. Выполнено циклов: {cycle_count} за {elapsed_total:.1f} сек")
+        self.status_updated.emit("Работа завершена")
 
-class SeamstressApp(QWidget):
-    def __init__(self):
-        super().__init__()
-        self.running = False
-        self.worker_thread = None
-        self.total_time_sec = 35
-        self.min_delay = 0.1
-        self.max_delay = 0.3
-        self.images_folder = os.path.join(BASE_DIR, "assets", "seamstress")
-        
-        self.log_window = LogWindow()
-        
-        if not os.path.exists(self.images_folder):
-            os.makedirs(self.images_folder)
-        
-        self.initUI()
+
+class SeamstressApp(BaseBotApp):
+    """Приложение для автоматизации швеи"""
     
-    def initUI(self):
-        self.setWindowTitle("Швея - Последовательный кликер")
-        self.setFixedSize(550, 400)
-        self.setStyleSheet(f"background-color: {COLORS['bg_dark']};")
+    def __init__(self):
+        # Инициализируем атрибуты ПЕРЕД вызовом super().__init__()
+        self._total_time_sec = 35
+        self._time_entry: Optional[QLineEdit] = None
+        self._action_label: Optional[QLabel] = None
         
-        main_layout = QVBoxLayout()
-        main_layout.setContentsMargins(20, 20, 20, 20)
-        main_layout.setSpacing(15)
+        # Вызываем родительский __init__
+        super().__init__(
+            title="Швея",
+            window_width=550,
+            window_height=380,
+            has_resolution=False,
+            has_delay=False,
+            has_log=True,
+            has_counter=False
+        )
         
-        # Статус
-        self.status_label = QLabel("Состояние: не активно")
-        self.status_label.setStyleSheet(f"color: {COLORS['text_primary']}; font-size: 14px; font-weight: bold;")
-        self.status_label.setAlignment(Qt.AlignCenter)
-        main_layout.addWidget(self.status_label)
+        # Создаем папку если нужно
+        if not os.path.exists(IMAGES_FOLDER):
+            os.makedirs(IMAGES_FOLDER)
         
-        # Действие
-        self.action_label = QLabel("Текущее действие: ожидание")
-        self.action_label.setStyleSheet(f"""
-            color: {COLORS['text_secondary']};
-            font-size: 12px;
-            padding: 8px;
-            background-color: {COLORS['bg_medium']};
-            border-radius: 8px;
+        # Загружаем настройки
+        self._load_settings()
+    
+    def _add_custom_settings(self, parent_layout: QVBoxLayout) -> None:
+        """Добавляет настройки"""
+        # Текущее действие
+        self._action_label = QLabel("Текущее действие: ожидание")
+        self._action_label.setStyleSheet("""
+            QLabel {
+                color: #cccccc;
+                font-size: 12px;
+                padding: 8px;
+                background-color: #3c3c3c;
+                border-radius: 8px;
+            }
         """)
-        self.action_label.setAlignment(Qt.AlignCenter)
-        main_layout.addWidget(self.action_label)
+        self._action_label.setAlignment(Qt.AlignCenter)
+        parent_layout.addWidget(self._action_label)
         
-        # Настройки
+        # Фрейм настроек
         settings_frame = QFrame()
-        settings_frame.setStyleSheet(f"background-color: {COLORS['bg_medium']}; border-radius: 10px;")
+        settings_frame.setStyleSheet(FRAME_STYLES["frame"])
         settings_layout = QVBoxLayout(settings_frame)
         settings_layout.setContentsMargins(15, 10, 15, 10)
-        settings_layout.setSpacing(10)
-        
-        settings_title = QLabel("Настройки:")
-        settings_title.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 13px; font-weight: bold;")
-        settings_title.setAlignment(Qt.AlignCenter)
-        settings_layout.addWidget(settings_title)
         
         # Время выполнения
         time_layout = QHBoxLayout()
         time_label = QLabel("Время выполнения (сек):")
-        time_label.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 12px;")
+        time_label.setStyleSheet(LABEL_STYLES["secondary"])
         time_layout.addWidget(time_label)
         
-        self.time_entry = QLineEdit(str(self.total_time_sec))
-        self.time_entry.setStyleSheet(f"""
-            QLineEdit {{
-                background-color: {COLORS['bg_light']};
-                color: {COLORS['text_primary']};
-                border: 1px solid {COLORS['border']};
-                border-radius: 5px;
-                padding: 5px;
-                font-size: 13px;
-                min-width: 70px;
-            }}
-            QLineEdit:focus {{ border: 1px solid {COLORS['primary']}; }}
-        """)
-        self.time_entry.setMaximumWidth(100)
-        time_layout.addWidget(self.time_entry)
+        self._time_entry = QLineEdit(str(self._total_time_sec))
+        self._time_entry.setStyleSheet(INPUT_STYLES["line_edit"])
+        self._time_entry.setMaximumWidth(100)
+        time_layout.addWidget(self._time_entry)
         time_layout.addStretch()
         settings_layout.addLayout(time_layout)
         
-        # Задержки
-        delays_layout = QVBoxLayout()
-        
-        min_layout = QHBoxLayout()
-        min_label = QLabel("Мин. задержка (сек):")
-        min_label.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 12px;")
-        min_layout.addWidget(min_label)
-        
-        self.min_delay_entry = QLineEdit(str(self.min_delay))
-        self.min_delay_entry.setStyleSheet(f"""
-            QLineEdit {{
-                background-color: {COLORS['bg_light']};
-                color: {COLORS['text_primary']};
-                border: 1px solid {COLORS['border']};
-                border-radius: 5px;
-                padding: 5px;
-                font-size: 13px;
-                min-width: 70px;
-            }}
-            QLineEdit:focus {{ border: 1px solid {COLORS['primary']}; }}
-        """)
-        self.min_delay_entry.setMaximumWidth(100)
-        min_layout.addWidget(self.min_delay_entry)
-        min_layout.addStretch()
-        delays_layout.addLayout(min_layout)
-        
-        max_layout = QHBoxLayout()
-        max_label = QLabel("Макс. задержка (сек):")
-        max_label.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 12px;")
-        max_layout.addWidget(max_label)
-        
-        self.max_delay_entry = QLineEdit(str(self.max_delay))
-        self.max_delay_entry.setStyleSheet(self.min_delay_entry.styleSheet())
-        self.max_delay_entry.setMaximumWidth(100)
-        max_layout.addWidget(self.max_delay_entry)
-        max_layout.addStretch()
-        delays_layout.addLayout(max_layout)
-        
-        settings_layout.addLayout(delays_layout)
-        
         # Информация о папке
-        images_info = QLabel(f"Папка: {self.images_folder}")
-        images_info.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: 11px;")
+        images_info = QLabel(f"📁 Папка с шаблонами: {IMAGES_FOLDER}")
+        images_info.setStyleSheet(LABEL_STYLES["muted"])
         images_info.setWordWrap(True)
         settings_layout.addWidget(images_info)
         
-        main_layout.addWidget(settings_frame)
-        main_layout.addStretch(1)
+        parent_layout.addWidget(settings_frame)
         
-        # Управление
-        control_frame = QFrame()
-        control_frame.setStyleSheet(f"background-color: {COLORS['bg_medium']}; border-radius: 10px;")
-        control_layout = QHBoxLayout(control_frame)
-        control_layout.setContentsMargins(20, 10, 20, 10)
-        
-        self.toggle_button = QPushButton("Запустить")
-        self.toggle_button.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {COLORS['primary']};
-                color: {COLORS['text_primary']};
-                border: none;
-                border-radius: 8px;
-                padding: 12px 24px;
-                font-size: 14px;
-                font-weight: bold;
-                min-width: 120px;
-            }}
-            QPushButton:hover {{ background-color: {COLORS['primary_hover']}; }}
-            QPushButton:pressed {{ background-color: {COLORS['primary_pressed']}; }}
-        """)
-        self.toggle_button.clicked.connect(self.toggle_bot)
-        control_layout.addWidget(self.toggle_button, alignment=Qt.AlignCenter)
-        
-        main_layout.addWidget(control_frame)
-        
-        # Кнопка логов
-        log_layout = QHBoxLayout()
-        log_layout.addStretch()
-        
-        self.log_btn = QPushButton("Показать логи")
-        self.log_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #607D8B;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                padding: 6px 12px;
-                font-size: 11px;
-                font-weight: bold;
-                min-width: 120px;
-            }
-            QPushButton:hover { background-color: #546E7A; }
-            QPushButton:pressed { background-color: #455A64; }
-        """)
-        self.log_btn.clicked.connect(self.toggle_log_window)
-        log_layout.addWidget(self.log_btn)
-        
-        main_layout.addLayout(log_layout)
-        self.setLayout(main_layout)
-        
-        self.check_images_folder()
+        self._check_images_folder()
     
-    def check_images_folder(self):
+    def _check_images_folder(self) -> bool:
         """Проверяет наличие изображений"""
-        if not os.path.exists(self.images_folder):
-            error_msg = "Папка с изображениями не найдена!"
-            self.status_label.setText(error_msg)
-            self.add_log(f"ВНИМАНИЕ: {error_msg}")
+        if not os.path.exists(IMAGES_FOLDER):
+            self._add_log("ВНИМАНИЕ: Папка с изображениями не найдена!")
             return False
         
-        missing_files = [f"{i}.png" for i in range(1, 21) 
-                        if not os.path.exists(os.path.join(self.images_folder, f"{i}.png"))]
+        missing = [f"{i}.png" for i in range(1, 21)
+                  if not os.path.exists(os.path.join(IMAGES_FOLDER, f"{i}.png"))]
         
-        if missing_files:
-            error_msg = f"Отсутствуют файлы: {', '.join(missing_files[:3])}{'...' if len(missing_files) > 3 else ''}"
-            self.status_label.setText(error_msg)
-            self.add_log(f"ВНИМАНИЕ: {error_msg}")
+        if missing:
+            self._add_log(f"ВНИМАНИЕ: Отсутствуют файлы: {missing[:3]}...")
             return False
         
-        self.add_log(f"Все 20 файлов найдены в папке: {self.images_folder}")
+        self._add_log(f"✅ Все 20 файлов найдены: {IMAGES_FOLDER}")
         return True
     
-    def toggle_log_window(self):
-        if self.log_window.isVisible():
-            self.log_window.hide()
-            self.log_btn.setText("Показать логи")
-        else:
-            self.log_window.show()
-            screen_geometry = QApplication.desktop().availableGeometry()
-            x = screen_geometry.width() - self.log_window.width() - 20
-            y = screen_geometry.height() - self.log_window.height() - 20
-            self.log_window.move(x, y)
-            self.log_btn.setText("Скрыть логи")
-    
-    def toggle_bot(self):
-        if self.running:
-            self.stop_bot()
-        else:
-            self.start_bot()
-    
-    def start_bot(self):
-        if not self.check_images_folder():
-            return
+    def _create_worker(self) -> Optional[BaseWorker]:
+        if not self._check_images_folder():
+            return None
         
         try:
-            self.total_time_sec = int(self.time_entry.text())
-            self.min_delay = float(self.min_delay_entry.text())
-            self.max_delay = float(self.max_delay_entry.text())
+            total_time = int(self._time_entry.text()) if self._time_entry else self._total_time_sec
             
-            if self.total_time_sec < 0:
-                raise ValueError("Время не может быть отрицательным")
-            if self.min_delay < 0 or self.max_delay < 0:
-                raise ValueError("Задержки не могут быть отрицательными")
-            if self.min_delay > self.max_delay:
-                raise ValueError("Мин. задержка должна быть меньше макс.")
-                
+            if total_time < 1:
+                raise ValueError("Время выполнения должно быть не менее 1 секунды")
+            if total_time > 3600:
+                raise ValueError("Время выполнения не должно превышать 3600 секунд (1 час)")
+            
+            return SeamstressWorker(total_time)
         except ValueError as e:
-            error_msg = f"Ошибка: {str(e)}"
-            self.status_label.setText(error_msg)
-            self.add_log(f"ОШИБКА: {error_msg}")
+            self._update_status(f"Ошибка: {e}")
+            return None
+    
+    def _start_bot(self) -> None:
+        """Запускает бота"""
+        self._worker = self._create_worker()
+        if not self._worker:
             return
         
-        self.running = True
-        self.toggle_button.setText("Остановить")
-        self.toggle_button.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {COLORS['danger']};
-                color: {COLORS['text_primary']};
-                border: none;
-                border-radius: 8px;
-                padding: 12px 24px;
-                font-size: 14px;
-                font-weight: bold;
-                min-width: 120px;
-            }}
-            QPushButton:hover {{ background-color: {COLORS['danger_hover']}; }}
-            QPushButton:pressed {{ background-color: {COLORS['danger_pressed']}; }}
-        """)
-        self.status_label.setText("Запуск...")
-        self.action_label.setText("Инициализация")
+        super()._start_bot()
         
-        self.worker_thread = SeamstressWorker(self.total_time_sec, self.images_folder, self.min_delay, self.max_delay)
-        self.worker_thread.log_message.connect(self.add_log)
-        self.worker_thread.status_updated.connect(self.update_status_label)
-        self.worker_thread.action_updated.connect(self.update_action_label)
-        self.worker_thread.start()
+        self._worker.status_updated.connect(self._update_action)
+        self._worker.log_message.connect(self._add_log)
+        self._worker.start()
         
-        self.add_log(f"Бот запущен. Время выполнения: {self.total_time_sec} сек")
-        self.add_log(f"Задержки: {self.min_delay:.2f} - {self.max_delay:.2f} сек")
+        total_time = int(self._time_entry.text()) if self._time_entry else self._total_time_sec
+        self._add_log(f"Бот запущен. Время работы: {total_time} сек")
     
-    def stop_bot(self):
-        self.running = False
-        self.toggle_button.setText("Запустить")
-        self.toggle_button.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {COLORS['primary']};
-                color: {COLORS['text_primary']};
-                border: none;
-                border-radius: 8px;
-                padding: 12px 24px;
-                font-size: 14px;
-                font-weight: bold;
-                min-width: 120px;
-            }}
-            QPushButton:hover {{ background-color: {COLORS['primary_hover']}; }}
-            QPushButton:pressed {{ background-color: {COLORS['primary_pressed']}; }}
-        """)
-        self.status_label.setText("Не активно")
-        self.action_label.setText("Ожидание")
+    def _update_action(self, action_text: str) -> None:
+        """Обновляет текст текущего действия"""
+        if self._action_label:
+            self._action_label.setText(f"Текущее действие: {action_text}")
+    
+    def _load_settings(self) -> None:
+        """Загружает сохраненные настройки"""
+        self._total_time_sec = config.get("seamstress", "total_time_sec", 35)
         
-        if self.worker_thread:
-            self.worker_thread.stop()
-            self.worker_thread.wait()
-            self.worker_thread = None
+        if self._time_entry:
+            self._time_entry.setText(str(self._total_time_sec))
+    
+    def _save_settings(self) -> None:
+        """Сохраняет текущие настройки"""
+        total_time = self._total_time_sec
         
-        self.add_log("Бот остановлен")
-    
-    def add_log(self, message):
-        self.log_window.add_log(message)
-    
-    def update_status_label(self, status_text):
-        self.status_label.setText(f"Состояние: {status_text}")
-    
-    def update_action_label(self, action_text):
-        self.action_label.setText(f"Текущее действие: {action_text}")
-    
-    def closeEvent(self, event):
-        if self.running:
-            self.stop_bot()
-        self.log_window.close()
-        event.accept()
+        if self._time_entry:
+            try:
+                total_time = int(self._time_entry.text())
+            except ValueError:
+                pass
+        
+        config.set("seamstress", "total_time_sec", total_time)
+
 
 def main():
     app = QApplication(sys.argv)
-    seamstress_app = SeamstressApp()
-    seamstress_app.show()
+    window = SeamstressApp()
+    window.show()
     sys.exit(app.exec_())
+
 
 if __name__ == "__main__":
     main()

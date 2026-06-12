@@ -1,8 +1,3 @@
-"""
-Модуль для сохранения и загрузки настроек всех ботов
-Поддерживает автосохранение параметров интерфейса
-"""
-
 import json
 import os
 import sys
@@ -13,9 +8,11 @@ from typing import Any, Dict, Optional
 if getattr(sys, 'frozen', False):
     BASE_DIR = os.path.dirname(sys.executable)
 else:
+    # config_manager.py находится в папке components, поэтому нужно подняться на уровень выше
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 CONFIG_FILE = os.path.join(BASE_DIR, "settings.json")
+
 DEFAULT_CONFIG = {
     "version": "3.0",
     
@@ -25,6 +22,20 @@ DEFAULT_CONFIG = {
         "color_tolerance": 10
     },
     
+    # В секции DEFAULT_CONFIG, после "version": "3.0" добавьте:
+    "main_window": {
+        "show_afk": True,
+        "show_lucky_wheel": True,
+        "show_cooking": True,
+        "show_gym": True,
+        "show_builder": True,
+        "show_port": True,
+        "show_mining": True,
+        "show_farm_cows": True,
+        "show_turner": True,
+        "show_seamstress": True
+    },
+
     # AFK+ бот
     "antiafk": {
         "fast_mode": False
@@ -90,10 +101,7 @@ DEFAULT_CONFIG = {
     
     # Швея
     "seamstress": {
-        "total_time_sec": 35,
-        "min_delay": 0.1,
-        "max_delay": 0.3,
-        "counter_visible": False
+        "total_time_sec": 35
     },
     
     # Токарь

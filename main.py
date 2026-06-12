@@ -2,7 +2,7 @@ import sys
 import webbrowser
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QPushButton, QLabel, QFrame, QGridLayout,
-                             QMessageBox)
+                             QMessageBox, QDialog, QScrollArea, QCheckBox)
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont, QPalette, QColor, QIcon
 
@@ -20,10 +20,182 @@ from catch_pda import CatchPDAApp
 from farm_cows import FarmCowsApp
 from components.config_manager import config
 
+
+class SettingsDialog(QDialog):
+    """Диалоговое окно настроек видимости модулей"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.parent = parent
+        self.initUI()
+        self.load_settings()
+    
+    def initUI(self):
+        self.setWindowTitle("Настройка ботов")
+        self.setFixedSize(400, 450)
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #2b2b2b;
+            }
+            QLabel {
+                color: #ffffff;
+                font-size: 13px;
+                font-weight: bold;
+                padding: 8px;
+            }
+            QCheckBox {
+                color: #cccccc;
+                font-size: 12px;
+                spacing: 6px;
+            }
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+            }
+            QPushButton {
+                background-color: #00adb5;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 6px 12px;
+                font-size: 11px;
+                font-weight: bold;
+                min-width: 70px;
+            }
+            QPushButton:hover {
+                background-color: #0098a0;
+            }
+            QPushButton#close_btn {
+                background-color: #555555;
+            }
+            QPushButton#close_btn:hover {
+                background-color: #666666;
+            }
+        """)
+        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(10)
+        
+        # Заголовок
+        title_label = QLabel("Выберите отображаемые боты")
+        title_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title_label)
+        
+        # Область прокрутки для чекбоксов
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setStyleSheet("""
+            QScrollArea {
+                border: none;
+                background-color: transparent;
+            }
+            QScrollBar:vertical {
+                background-color: #3c3c3c;
+                width: 10px;
+                border-radius: 5px;
+            }
+            QScrollBar::handle:vertical {
+                background-color: #00adb5;
+                border-radius: 5px;
+                min-height: 20px;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+        """)
+        
+        # Контейнер для чекбоксов
+        checkbox_container = QWidget()
+        checkbox_layout = QVBoxLayout(checkbox_container)
+        checkbox_layout.setContentsMargins(5, 5, 5, 5)
+        checkbox_layout.setSpacing(6)
+        
+        # Список модулей с их идентификаторами и отображаемыми названиями
+        self.modules = [
+            ("afk", "🎮 AFK+"),
+            ("lucky_wheel", "🎡 Колесо удачи"),
+            ("cooking", "👨‍🍳 Готовка"),
+            ("gym", "💪 Тренажерный зал"),
+            ("builder", "🏗️ Стройка"),
+            ("port", "⚓ Порт"),
+            ("mining", "⛏️ Шахта"),
+            ("farm_cows", "🐄 Коровник"),
+            ("turner", "🔧 Токарь"),
+            # ("seamstress", "🧵 Швея"),
+        ]
+        
+        self.checkboxes = {}
+        
+        for module_id, display_name in self.modules:
+            checkbox = QCheckBox(display_name)
+            checkbox.setProperty("module_id", module_id)
+            checkbox_layout.addWidget(checkbox)
+            self.checkboxes[module_id] = checkbox
+        
+        checkbox_layout.addStretch()
+        scroll_area.setWidget(checkbox_container)
+        layout.addWidget(scroll_area)
+        
+        # Кнопки управления
+        buttons_layout = QHBoxLayout()
+        buttons_layout.setSpacing(8)
+        
+        select_all_btn = QPushButton("Выбрать все")
+        select_all_btn.clicked.connect(self.select_all)
+        buttons_layout.addWidget(select_all_btn)
+        
+        deselect_all_btn = QPushButton("Снять все")
+        deselect_all_btn.clicked.connect(self.deselect_all)
+        buttons_layout.addWidget(deselect_all_btn)
+        
+        buttons_layout.addStretch()
+        
+        save_btn = QPushButton("Сохранить")
+        save_btn.clicked.connect(self.save_settings)
+        buttons_layout.addWidget(save_btn)
+        
+        close_btn = QPushButton("Закрыть")
+        close_btn.setObjectName("close_btn")
+        close_btn.clicked.connect(self.close)
+        buttons_layout.addWidget(close_btn)
+        
+        layout.addLayout(buttons_layout)
+    
+    def load_settings(self):
+        """Загружает настройки видимости модулей"""
+        for module_id, checkbox in self.checkboxes.items():
+            visible = config.get("main_window", f"show_{module_id}", True)
+            checkbox.setChecked(visible)
+    
+    def save_settings(self):
+        """Сохраняет настройки видимости модулей"""
+        for module_id, checkbox in self.checkboxes.items():
+            config.set("main_window", f"show_{module_id}", checkbox.isChecked())
+        
+        # Обновляем главное окно
+        if self.parent:
+            self.parent.rebuild_modules_grid()
+        
+        self.close()
+    
+    def select_all(self):
+        """Выбирает все чекбоксы"""
+        for checkbox in self.checkboxes.values():
+            checkbox.setChecked(True)
+    
+    def deselect_all(self):
+        """Снимает все чекбоксы"""
+        for checkbox in self.checkboxes.values():
+            checkbox.setChecked(False)
+
+
 class MainApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.open_windows = []  # Список открытых окон
+        self.modules_frame = None  # Фрейм с модулями
+        self.modules_layout = None  # Layout модулей
         self.initUI()
         
     def initUI(self):
@@ -55,20 +227,15 @@ class MainApp(QMainWindow):
             QPushButton#donate_btn:pressed {
                 background-color: #ef6c00;
             }
-            QPushButton#reset_btn {
-                background-color: #9C27B0;
-                color: white;
+            QPushButton#settings_btn {
+                background-color: transparent;
                 border: none;
                 border-radius: 8px;
-                padding: 8px 16px;
-                font-size: 12px;
-                font-weight: bold;
+                padding: 4px 8px;
+                font-size: 14px;
             }
-            QPushButton#reset_btn:hover {
-                background-color: #7B1FA2;
-            }
-            QPushButton#reset_btn:pressed {
-                background-color: #6A1B9A;
+            QPushButton#settings_btn:hover {
+                background-color: #3c3c3c;
             }
             QLabel#author_label {
                 color: #aaaaaa;
@@ -127,8 +294,22 @@ class MainApp(QMainWindow):
         separator.setMaximumHeight(1)
         main_layout.addWidget(separator)
         
-        # Сетка с карточками модулей 4x3
-        self.create_modules_grid(main_layout)
+        # Сетка с карточками модулей
+        self.modules_frame = QWidget()
+        self.modules_frame.setStyleSheet("""
+            QWidget {
+                background-color: transparent;
+                border: none;
+            }
+        """)
+        self.modules_layout = QGridLayout(self.modules_frame)
+        self.modules_layout.setSpacing(12)
+        self.modules_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Заполняем сетку модулями
+        self.rebuild_modules_grid()
+        
+        main_layout.addWidget(self.modules_frame, 1)
         
         # Футер с кнопками - фиксированная высота
         footer_frame = QFrame()
@@ -137,7 +318,13 @@ class MainApp(QMainWindow):
         footer_layout.setContentsMargins(0, 0, 0, 0)
         footer_layout.setSpacing(8)
         
-        # Ссылка на автора (левый нижний угол)
+        # Левая часть футера (автор и настройки)
+        left_container = QWidget()
+        left_layout = QVBoxLayout(left_container)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(2)
+        
+        # Ссылка на автора
         self.author_label = QLabel("by: raktoperk")
         self.author_label.setObjectName("author_label")
         self.author_label.setCursor(Qt.PointingHandCursor)
@@ -147,18 +334,28 @@ class MainApp(QMainWindow):
             webbrowser.open("https://www.blast.hk/members/572838/")
         
         self.author_label.mousePressEvent = open_author_link
+        left_layout.addWidget(self.author_label)
+        
+        # Кнопка настроек отображения ботов (под автором)
+        self.settings_btn = QPushButton("⚙️")
+        self.settings_btn.setObjectName("settings_btn")
+        self.settings_btn.setCursor(Qt.PointingHandCursor)
+        self.settings_btn.setFixedWidth(30)
+        self.settings_btn.setFixedHeight(30)
+        self.settings_btn.setFont(QFont("Arial", 25))
+        self.settings_btn.setToolTip("Настройка отображаемых ботов")
+        self.settings_btn.clicked.connect(self.open_settings)
+        left_layout.addWidget(self.settings_btn)
+        
+        footer_layout.addWidget(left_container)
+        footer_layout.addStretch()
         
         # Кнопка доната
         self.donate_btn = QPushButton("💰 Поддержать разработчика")
         self.donate_btn.setObjectName("donate_btn")
         self.donate_btn.setCursor(Qt.PointingHandCursor)
         self.donate_btn.clicked.connect(lambda: webbrowser.open("https://donate.stream/raktoperk"))
-        
-        # Кнопка сброса всех настроек
-        self.reset_btn = QPushButton("⚙️ Сбросить все настройки")
-        self.reset_btn.setObjectName("reset_btn")
-        self.reset_btn.setCursor(Qt.PointingHandCursor)
-        self.reset_btn.clicked.connect(self.reset_all_settings)
+        footer_layout.addWidget(self.donate_btn)
         
         # Кнопка закрытия всех окон
         self.close_all_btn = QPushButton("❌ Закрыть все окна")
@@ -185,12 +382,6 @@ class MainApp(QMainWindow):
         """)
         self.close_all_btn.clicked.connect(self.close_all_windows)
         self.close_all_btn.setEnabled(False)
-        
-        # Добавляем элементы в футер
-        footer_layout.addWidget(self.author_label)
-        footer_layout.addStretch()
-        footer_layout.addWidget(self.donate_btn)
-        footer_layout.addWidget(self.reset_btn)
         footer_layout.addWidget(self.close_all_btn)
         
         main_layout.addWidget(footer_frame)
@@ -206,87 +397,79 @@ class MainApp(QMainWindow):
         self.windows_label.setAlignment(Qt.AlignCenter)
         main_layout.addWidget(self.windows_label)
     
-    def reset_all_settings(self):
-        """Сброс всех настроек к значениям по умолчанию"""
-        reply = QMessageBox.question(
-            self,
-            "Сброс настроек",
-            "Вы уверены, что хотите сбросить ВСЕ настройки ботов к значениям по умолчанию?\n"
-            "Это действие нельзя отменить.",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
-        )
-        
-        if reply == QMessageBox.Yes:
-            config.reset_all()
-            QMessageBox.information(
-                self,
-                "Сброс выполнен",
-                "Все настройки сброшены до значений по умолчанию.\n"
-                "При следующем запуске ботов настройки будут загружены заново."
-            )
+    def open_settings(self):
+        """Открывает окно настроек отображения ботов"""
+        dialog = SettingsDialog(self)
+        dialog.exec_()
     
-    def create_modules_grid(self, main_layout):
-        """Создает сетку с карточками модулей 4x3"""
-        modules_frame = QWidget()
-        modules_frame.setStyleSheet("""
-            QWidget {
-                background-color: transparent;
-                border: none;
-            }
-        """)
+    def rebuild_modules_grid(self):
+        """Перестраивает сетку модулей на основе сохранённых настроек"""
+        # Очищаем текущие модули
+        if self.modules_layout:
+            while self.modules_layout.count():
+                item = self.modules_layout.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
         
-        modules_layout = QGridLayout(modules_frame)
-        modules_layout.setSpacing(12)
-        modules_layout.setContentsMargins(0, 0, 0, 0)
-        
-        # Список модулей для сетки 4x3
-        modules_info = [
-            ("🎮", "AFK+", self.open_antiafk),
-            ("🎡", "Колесо удачи", self.open_lucky_wheel),
-            ("👨‍🍳", "Готовка", self.open_cooking),
-            ("💪", "Тренажерный зал", self.open_gym),
-            ("🏗️", "Стройка", self.open_builder),
-            ("⚓", "Порт", self.open_port),
-            ("⛏️", "Шахта", self.open_mining),
-            ("🐄", "Коровник", self.open_farm_cows),
-            ("🔧", "Токарь", self.open_turner),
-            ("🧵", "Швея", self.open_seamstress),
+        # Список модулей для сетки
+        all_modules = [
+            ("afk", "AFK+", self.open_antiafk, "🎮"),
+            ("lucky_wheel", "Колесо удачи", self.open_lucky_wheel, "🎡"),
+            ("cooking", "Готовка", self.open_cooking, "👨‍🍳"),
+            ("gym", "Тренажерный зал", self.open_gym, "💪"),
+            ("builder", "Стройка", self.open_builder, "🏗️"),
+            ("port", "Порт", self.open_port, "⚓"),
+            ("mining", "Шахта", self.open_mining, "⛏️"),
+            ("farm_cows", "Коровник", self.open_farm_cows, "🐄"),
+            ("turner", "Токарь", self.open_turner, "🔧"),
+            # ("seamstress", "Швея", self.open_seamstress, "🧵"),
         ]
         
-        # Создаем сетку 4x3
+        # Фильтруем модули по настройкам видимости
+        visible_modules = []
+        for module_id, title, callback, icon in all_modules:
+            if config.get("main_window", f"show_{module_id}", True):
+                visible_modules.append((module_id, title, callback, icon))
+        
+        # Создаем сетку
         row, col = 0, 0
-        total_rows = 3
         total_cols = 4
         
-        for i in range(total_rows * total_cols):
-            if i < len(modules_info):
-                icon, title, callback = modules_info[i]
-                module_card = self.create_module_card(icon, title, callback)
-            else:
-                # Создаем пустую карточку-заполнитель
-                module_card = self.create_empty_card()
+        for i, (module_id, title, callback, icon) in enumerate(visible_modules):
+            module_card = self.create_module_card(icon, title, callback, module_id)
+            self.modules_layout.addWidget(module_card, row, col)
             
-            modules_layout.addWidget(module_card, row, col)
             col += 1
             if col >= total_cols:
                 col = 0
                 row += 1
         
-        # Растягиваем колонки равномерно
-        for i in range(total_cols):
-            modules_layout.setColumnStretch(i, 1)
-        
-        # Растягиваем строки равномерно
-        for i in range(total_rows):
-            modules_layout.setRowStretch(i, 1)
-        
-        # Добавляем модули в основной layout
-        main_layout.addWidget(modules_frame, 1)
+        # Если нет видимых модулей, показываем сообщение
+        if not visible_modules:
+            empty_label = QLabel("Нет активных ботов.\nНажмите ⚙️ Настройка ботов чтобы включить отображение.")
+            empty_label.setStyleSheet("""
+                QLabel {
+                    color: #aaaaaa;
+                    font-size: 14px;
+                    text-align: center;
+                    padding: 40px;
+                }
+            """)
+            empty_label.setAlignment(Qt.AlignCenter)
+            self.modules_layout.addWidget(empty_label, 0, 0, 1, total_cols)
+        else:
+            # Растягиваем колонки равномерно
+            for i in range(total_cols):
+                self.modules_layout.setColumnStretch(i, 1)
+            
+            # Растягиваем строки равномерно
+            for i in range(row + 1):
+                self.modules_layout.setRowStretch(i, 1)
     
-    def create_module_card(self, icon, title, callback):
-        """Создает компактную карточку модуля без описания"""
+    def create_module_card(self, icon, title, callback, module_id):
+        """Создает компактную карточку модуля"""
         card = QPushButton()
+        card.setProperty("module_id", module_id)
         card.setMinimumSize(180, 100)
         card.setMaximumSize(220, 120)
         card.setStyleSheet("""
@@ -351,9 +534,9 @@ class MainApp(QMainWindow):
         window = TurnerApp()
         self.setup_window(window, "Токарь")
     
-    def open_seamstress(self):
-        window = SeamstressApp()
-        self.setup_window(window, "Швея")
+    # def open_seamstress(self):
+    #     window = SeamstressApp()
+    #     self.setup_window(window, "Швея")
     
     def open_builder(self):
         window = BuilderApp()
@@ -432,6 +615,7 @@ class MainApp(QMainWindow):
         self.close_all_windows()
         event.accept()
 
+
 def main():
     app = QApplication(sys.argv)
     app.setStyle('Fusion')
@@ -466,6 +650,7 @@ def main():
     window = MainApp()
     window.show()
     sys.exit(app.exec_())
+
 
 if __name__ == '__main__':
     main()

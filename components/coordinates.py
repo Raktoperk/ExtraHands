@@ -12,13 +12,20 @@ port_coordinate = {
     "FullHD": {"port_marker" : (965, 501),},
     "QuadHD": {"port_marker" : (1288, 670),},
 }
+
 farm_cows_coordinate = {
-    "FullHD": {"color_a": (910, 875),
-               "color_d": (1060, 875),
-               "danger_color": (1220, 840),},
-    "QuadHD": {"color_a": (1225, 1177),
-               "color_d": (1327, 1177),
-               "danger_color": (1538, 1135),},
+    "FullHD": {
+        "color_a": (910, 875),
+        "color_d": (1060, 875),
+        "danger_color": (1220, 840),
+        "cow_marker": (1320, 900),  # Добавлено
+    },
+    "QuadHD": {
+        "color_a": (1225, 1177),
+        "color_d": (1327, 1177),
+        "danger_color": (1538, 1135),
+        "cow_marker": (1760, 1220),  # Добавлено (примерное значение)
+    },
 }
 
 mining_coordinate = {

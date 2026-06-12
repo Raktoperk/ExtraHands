@@ -1,845 +1,437 @@
-from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, 
-                             QPushButton, QLabel, QFrame, QGroupBox, QTextEdit, QCheckBox)
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
-from PyQt5.QtGui import QFont, QPainterPath, QRegion, QPainter, QBrush, QColor
+"""
+Бот для автоматизации порта
+"""
+
 import sys
-import ctypes
 import time
-import keyboard  # Добавляем импорт keyboard
-from ctypes import wintypes
+import threading
+from typing import Optional
+
+import pyautogui
+from PyQt5.QtWidgets import QApplication, QVBoxLayout, QFrame, QHBoxLayout, QCheckBox, QLabel
+from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtGui import QKeySequence
+from PyQt5.QtWidgets import QShortcut
+
+from components.base_bot import BaseBotApp, BaseWorker
 from components.functions import check_color, press_key
 from components.colors import colors
 from components.coordinates import port_coordinate
 from components.config_manager import config
-from datetime import datetime
+from components.styles import FRAME_STYLES, BUTTON_STYLES, LABEL_STYLES, CHECKBOX_STYLES
+from components.constants import PRESS_KEY_DURATION
+
+# Пытаемся импортировать pydirectinput (лучше для игр)
+try:
+    import pydirectinput
+    pydirectinput.PAUSE = 0
+    INPUT_LIB = pydirectinput
+except ImportError:
+    INPUT_LIB = pyautogui
+    INPUT_LIB.PAUSE = 0
+
+# Пробуем разные библиотеки для глобального хука
+KEYBOARD_AVAILABLE = False
+KEYBOARD_LIB = None
 
 try:
-    from components.styles import *
+    from pynput import keyboard as pynput_keyboard
+    KEYBOARD_AVAILABLE = True
+    KEYBOARD_LIB = "pynput"
+    print("Используется pynput для глобальных хуков")
 except ImportError:
-    # Запасные значения если файл стилей не найден
-    from components.styles import (
-        COLORS, WINDOW_STYLES, BUTTON_STYLES, LABEL_STYLES, 
-        CHECKBOX_STYLES, COUNTER_WINDOW_STYLES, FRAME_STYLES,
-        INPUT_STYLES, GROUPBOX_STYLES
-    )
+    try:
+        import keyboard
+        KEYBOARD_AVAILABLE = True
+        KEYBOARD_LIB = "keyboard"
+        print("Используется keyboard для глобальных хуков")
+    except ImportError:
+        print("⚠️ Ни одна библиотека для глобальных хуков не установлена")
+        print("Установите: pip install pynput")
+        KEYBOARD_AVAILABLE = False
 
-# Константы для виртуальных клавиш (оставляем только нужные)
-VK_ESCAPE = 0x1B
 
-# Структуры и функции Windows API (оставляем только для GetAsyncKeyState)
-user32 = ctypes.WinDLL('user32', use_last_error=True)
-
-def is_key_pressed(vk_code):
-    """Проверяет, нажата ли клавиша (используем для ESC)"""
-    return user32.GetAsyncKeyState(vk_code) & 0x8000 != 0
-
-class CounterWindow(QWidget):
-    """Окно счетчика с информацией об автобеге"""
-    def __init__(self):
+class PortWorker(BaseWorker):
+    """Рабочий поток для порта"""
+    
+    def __init__(self, resolution_mode: str):
         super().__init__()
-        self.counter = 0
-        self.is_hidden = True
-        self.auto_run_status = False
-        self.initUI()
-        
-    def initUI(self):
-        # Окно поверх всех, без рамки
-        self.setWindowFlags(
-            Qt.WindowStaysOnTopHint | 
-            Qt.FramelessWindowHint | 
-            Qt.Tool
-        )
-        
-        # Прозрачный фон
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        
-        # Основной фрейм с закругленными углами
-        main_frame = QFrame(self)
-        main_frame.setStyleSheet(COUNTER_WINDOW_STYLES["frame"])
-        
-        # Горизонтальный layout - все элементы в одну линию
-        layout = QHBoxLayout(main_frame)
-        layout.setContentsMargins(25, 15, 25, 15)
-        layout.setSpacing(15)
-        
-        # Блок "Автобег" - Горизонтальное расположение
-        auto_run_widget = QWidget()
-        auto_run_widget.setStyleSheet("background: transparent;")
-        auto_run_layout = QHBoxLayout(auto_run_widget)
-        auto_run_layout.setContentsMargins(0, 0, 0, 0)
-        auto_run_layout.setSpacing(8)
-        
-        # Текст "Автобег:"
-        auto_run_text = QLabel("Автобег:")
-        auto_run_text.setStyleSheet(f"""
-            {COUNTER_WINDOW_STYLES["text"]}
-            font-size: 16px;
-            font-weight: bold;
-            color: #CCCCCC;
-        """)
-        auto_run_text.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        auto_run_layout.addWidget(auto_run_text)
-        
-        # Статус автобега
-        self.auto_run_status_label = QLabel("выкл")
-        self.auto_run_status_label.setStyleSheet(f"""
-            {COUNTER_WINDOW_STYLES["text"]}
-            font-size: 18px;
-            font-weight: bold;
-            color: {COLORS["danger"]};
-            min-width: 50px;
-        """)
-        self.auto_run_status_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        auto_run_layout.addWidget(self.auto_run_status_label)
-        
-        layout.addWidget(auto_run_widget)
-        
-        # Разделитель
-        separator = QLabel("│")
-        separator.setStyleSheet(f"""
-            {COUNTER_WINDOW_STYLES["text"]}
-            font-size: 28px;
-            font-weight: normal;
-            color: #555555;
-            padding: 0 10px;
-        """)
-        layout.addWidget(separator)
-        
-        # Блок "Счетчик" - Горизонтальное расположение
-        counter_widget = QWidget()
-        counter_widget.setStyleSheet("background: transparent;")
-        counter_layout = QHBoxLayout(counter_widget)
-        counter_layout.setContentsMargins(0, 0, 0, 0)
-        counter_layout.setSpacing(8)
-        
-        # Текст "Отнесено коробок:"
-        counter_text = QLabel("Коробок:")
-        counter_text.setStyleSheet(f"""
-            {COUNTER_WINDOW_STYLES["text"]}
-            font-size: 16px;
-            font-weight: bold;
-            color: #CCCCCC;
-        """)
-        counter_text.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        counter_layout.addWidget(counter_text)
-        
-        # Счетчик
-        self.counter_label = QLabel("0")
-        self.counter_label.setStyleSheet(f"""
-            {COUNTER_WINDOW_STYLES["counter"]}
-            font-size: 26px;
-            font-weight: bold;
-            color: {COLORS["primary"]};
-            min-width: 50px;
-        """)
-        self.counter_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        counter_layout.addWidget(self.counter_label)
-        
-        layout.addWidget(counter_widget)
-        
-        # Добавляем растягивающий элемент в конце
-        layout.addStretch()
-        
-        # Устанавливаем layout для основного виджета
-        main_layout = QVBoxLayout(self)
-        main_layout.addWidget(main_frame)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        
-        # Устанавливаем размер окна
-        self.setFixedSize(380, 52)
-        
-        # Позиционируем в правом верхнем углу
-        self.move_to_top_right()
-        
-    def paintEvent(self, event):
-        """Переопределяем paintEvent для рисования закругленных углов"""
-        super().paintEvent(event)
-        
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        
-        # Используем цвет из стилей
-        painter.setBrush(QBrush(QColor(COLORS["bg_medium"])))
-        painter.setPen(Qt.NoPen)
-        
-        rect = self.rect()
-        painter.drawRoundedRect(rect, 10, 10)
-        
-        # Добавляем тонкую рамку
-        painter.setPen(QColor(COLORS["border"]))
-        painter.setBrush(Qt.NoBrush)
-        painter.drawRoundedRect(rect.adjusted(0, 0, -1, -1), 10, 10)
-        
-    def move_to_top_right(self):
-        """Помещает окно в правый верхний угол"""
-        screen_geometry = QApplication.desktop().availableGeometry()
-        x = screen_geometry.width() - self.width() - 20
-        y = 10
-        self.move(x, y)
-        
-    def increment_counter(self):
-        """Увеличивает счетчик на 1"""
-        self.counter += 1
-        self.counter_label.setText(str(self.counter))
-        
-    def reset_counter(self):
-        """Сбрасывает счетчик"""
-        self.counter = 0
-        self.counter_label.setText("0")
-        
-    def update_auto_run_status(self, is_running):
-        """Обновляет статус автобега"""
-        self.auto_run_status = is_running
-        if is_running:
-            self.auto_run_status_label.setText("  вкл")
-            self.auto_run_status_label.setStyleSheet(f"""
-                {COUNTER_WINDOW_STYLES["text"]}
-                font-size: 18px;
-                font-weight: bold;
-                color: {COLORS["success"]};
-            """)
-        else:
-            self.auto_run_status_label.setText("выкл")
-            self.auto_run_status_label.setStyleSheet(f"""
-                {COUNTER_WINDOW_STYLES["text"]}
-                font-size: 18px;
-                font-weight: bold;
-                color: {COLORS["danger"]};
-            """)
-        
-    def mousePressEvent(self, event):
-        """Позволяет перемещать окно"""
-        if event.button() == Qt.LeftButton:
-            self.drag_position = event.globalPos() - self.frameGeometry().topLeft()
-            event.accept()
-            
-    def mouseMoveEvent(self, event):
-        """Перемещение окна"""
-        if event.buttons() == Qt.LeftButton:
-            self.move(event.globalPos() - self.drag_position)
-            event.accept()
-            
-    def toggle_visibility(self):
-        """Переключает видимость окна"""
-        if self.is_hidden:
-            self.show()
-            self.is_hidden = False
-        else:
-            self.hide()
-            self.is_hidden = True
-
-class LogWindow(QWidget):
-    """Окно для отображения логов и ошибок"""
-    def __init__(self):
-        super().__init__()
-        self.initUI()
-        
-    def initUI(self):
-        # Окно поверх всех
-        self.setWindowFlags(
-            Qt.WindowStaysOnTopHint | 
-            Qt.CustomizeWindowHint | 
-            Qt.WindowTitleHint
-        )
-        # Убираем кнопку закрытия
-        self.setWindowFlag(Qt.WindowCloseButtonHint, False)
-        
-        # Настройка окна
-        self.setWindowTitle("Логи порта")
-        self.setFixedSize(700, 400)
-        self.setStyleSheet(WINDOW_STYLES["main_window"])
-        
-        # Основной layout
-        main_layout = QVBoxLayout()
-        main_layout.setContentsMargins(10, 10, 10, 10)
-        main_layout.setSpacing(5)
-        
-        # Верхняя панель с кнопками управления
-        top_panel = QHBoxLayout()
-        
-        # Кнопка очистки всех логов
-        clear_all_btn = QPushButton("Очистить всё")
-        clear_all_btn.setStyleSheet(BUTTON_STYLES["accent_small"])
-        clear_all_btn.clicked.connect(self.clear_all_logs)
-        top_panel.addWidget(clear_all_btn)
-        
-        # Кнопка очистки только ошибок
-        clear_errors_btn = QPushButton("Очистить ошибки")
-        clear_errors_btn.setStyleSheet(BUTTON_STYLES["danger_small"])
-        clear_errors_btn.clicked.connect(self.clear_errors)
-        top_panel.addWidget(clear_errors_btn)
-        
-        top_panel.addStretch()
-        main_layout.addLayout(top_panel)
-        
-        # Горизонтальный layout для двух текстовых полей
-        content_layout = QHBoxLayout()
-        content_layout.setSpacing(10)
-        
-        # Левая часть: обычные логи
-        log_group = QGroupBox("Логи порта")
-        log_group.setStyleSheet(GROUPBOX_STYLES["standard"])
-        
-        log_layout = QVBoxLayout(log_group)
-        self.log_text = QTextEdit()
-        self.log_text.setReadOnly(True)
-        self.log_text.setStyleSheet(INPUT_STYLES["text_edit"])
-        log_layout.addWidget(self.log_text)
-        
-        # Правая часть: ошибки
-        error_group = QGroupBox("Ошибки")
-        error_group.setStyleSheet(GROUPBOX_STYLES["error"])
-        
-        error_layout = QVBoxLayout(error_group)
-        self.error_text = QTextEdit()
-        self.error_text.setReadOnly(True)
-        self.error_text.setStyleSheet(INPUT_STYLES["text_edit_error"])
-        error_layout.addWidget(self.error_text)
-        
-        content_layout.addWidget(log_group, 1)
-        content_layout.addWidget(error_group, 1)
-        
-        main_layout.addLayout(content_layout)
-        
-        # Панель статистики внизу
-        stats_layout = QHBoxLayout()
-        
-        self.log_count_label = QLabel("Логов: 0")
-        self.log_count_label.setStyleSheet(LABEL_STYLES["status"])
-        stats_layout.addWidget(self.log_count_label)
-        
-        self.error_count_label = QLabel("Ошибок: 0")
-        self.error_count_label.setStyleSheet(LABEL_STYLES["status_error"])
-        stats_layout.addWidget(self.error_count_label)
-        
-        stats_layout.addStretch()
-        
-        # Кнопка копирования ошибок в буфер обмена
-        copy_errors_btn = QPushButton("Копировать ошибки")
-        copy_errors_btn.setStyleSheet(BUTTON_STYLES["primary_small"])
-        copy_errors_btn.clicked.connect(self.copy_errors_to_clipboard)
-        stats_layout.addWidget(copy_errors_btn)
-        
-        main_layout.addLayout(stats_layout)
-        
-        self.setLayout(main_layout)
-        
-        # Счетчики
-        self.log_count = 0
-        self.error_count = 0
-        
-    def add_log(self, message):
-        """Добавляет сообщение в лог"""
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        log_entry = f"[{timestamp}] {message}"
-        self.log_text.append(log_entry)
-        
-        # Прокручиваем до конца
-        self.log_text.verticalScrollBar().setValue(
-            self.log_text.verticalScrollBar().maximum()
-        )
-        
-        # Обновляем счетчик
-        self.log_count += 1
-        self.log_count_label.setText(f"Логов: {self.log_count}")
-        
-        # Проверяем, является ли сообщение ошибкой
-        if any(error_keyword in message.upper() for error_keyword in ['ОШИБКА', 'ERROR', 'EXCEPTION', 'FAIL', 'FAILED', 'КРИТИЧЕСКАЯ', 'WARNING', 'ВНИМАНИЕ']):
-            self.add_error(message)
+        self._resolution_mode = resolution_mode
+        self._green_color = colors.color["light_green"]
+        self._last_click_time = 0  # Время последнего клика
+        self._click_cooldown = 0.2  # 200 мс задержка после клика
     
-    def add_error(self, message):
-        """Добавляет сообщение об ошибке в отдельный блок"""
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        error_entry = f"[{timestamp}] {message}"
-        self.error_text.append(error_entry)
+    def run(self) -> None:
+        """Основной цикл потока"""
+        self.log_message.emit("Запуск потока порта")
         
-        # Прокручиваем до конца
-        self.error_text.verticalScrollBar().setValue(
-            self.error_text.verticalScrollBar().maximum()
-        )
-        
-        # Обновляем счетчик ошибок
-        self.error_count += 1
-        self.error_count_label.setText(f"Ошибок: {self.error_count}")
-        
-    def clear_all_logs(self):
-        """Очищает все логи и ошибки"""
-        self.log_text.clear()
-        self.error_text.clear()
-        self.log_count = 0
-        self.error_count = 0
-        self.log_count_label.setText("Логов: 0")
-        self.error_count_label.setText("Ошибок: 0")
-        
-    def clear_errors(self):
-        """Очищает только ошибки"""
-        self.error_text.clear()
-        self.error_count = 0
-        self.error_count_label.setText("Ошибок: 0")
-        
-    def copy_errors_to_clipboard(self):
-        """Копирует все ошибки в буфер обмена"""
-        errors = self.error_text.toPlainText()
-        if errors:
-            clipboard = QApplication.clipboard()
-            clipboard.setText(errors)
-            
-            # Временно меняем текст кнопки для подтверждения
-            btn = self.sender()
-            if btn:
-                original_text = btn.text()
-                btn.setText("Скопировано!")
-                from PyQt5.QtCore import QTimer
-                QTimer.singleShot(1500, lambda: btn.setText(original_text))
-
-class AutoRunManager:
-    """Менеджер автобега с использованием keyboard библиотеки"""
-    
-    def __init__(self, checkbox=None, counter_window=None):
-        self.is_running = False
-        self.log_callback = None
-        self.checkbox = checkbox
-        self.counter_window = counter_window
-        self.hotkey_id = None
-        
-    def start(self, log_callback=None):
-        """Запускает менеджер автобега"""
-        self.log_callback = log_callback
-        
-        # Регистрируем горячую клавишу F7
-        try:
-            keyboard.remove_hotkey('f7')  # Удаляем предыдущий, если был
-        except:
-            pass
-            
-        self.hotkey_id = keyboard.add_hotkey('f7', self.toggle_auto_run)
-        
-        if self.log_callback:
-            self.log_callback("Автобег инициализирован (F7 - вкл/выкл)")
-    
-    def toggle_auto_run(self):
-        """Включает/выключает автобег"""
-        if self.is_running:
-            self.stop_auto_run()
-        else:
-            self.start_auto_run()
-            
-        # Обновляем чекбокс
-        if self.checkbox:
-            self.checkbox.blockSignals(True)
-            self.checkbox.setChecked(self.is_running)
-            self.checkbox.blockSignals(False)
-            
-        # Обновляем статус в окне счетчика
-        if self.counter_window:
-            self.counter_window.update_auto_run_status(self.is_running)
-    
-    def start_auto_run(self):
-        """Запускает автобег - зажимает Shift + W"""
-        try:
-            # Зажимаем клавиши через keyboard
-            keyboard.press('shift')
-            time.sleep(0.05)
-            keyboard.press('w')
-            
-            self.is_running = True
-            if self.log_callback:
-                self.log_callback("Автобег включен (Shift + W зажаты)")
-                
-            # Обновляем статус в окне счетчика
-            if self.counter_window:
-                self.counter_window.update_auto_run_status(True)
-        except Exception as e:
-            if self.log_callback:
-                self.log_callback(f"Ошибка при запуске автобега: {str(e)}")
-    
-    def stop_auto_run(self):
-        """Останавливает автобег - отпускает Shift + W"""
-        try:
-            # Отпускаем клавиши через keyboard
-            keyboard.release('w')
-            time.sleep(0.05)
-            keyboard.release('shift')
-            
-            self.is_running = False
-            if self.log_callback:
-                self.log_callback("Автобег выключен (Shift + W отпущены)")
-                
-            # Обновляем статус в окне счетчика
-            if self.counter_window:
-                self.counter_window.update_auto_run_status(False)
-        except Exception as e:
-            if self.log_callback:
-                self.log_callback(f"Ошибка при остановке автобега: {str(e)}")
-    
-    def set_state(self, state):
-        """Устанавливает состояние автобега (True/False)"""
-        if state and not self.is_running:
-            self.start_auto_run()
-        elif not state and self.is_running:
-            self.stop_auto_run()
-            
-        # Обновляем статус в окне счетчика
-        if self.counter_window:
-            self.counter_window.update_auto_run_status(state)
-    
-    def cleanup(self):
-        """Очистка при завершении"""
-        if self.is_running:
-            self.stop_auto_run()
-        
-        # Удаляем горячую клавишу
-        try:
-            keyboard.remove_hotkey('f7')
-        except:
-            pass
-
-class WorkerThread(QThread):
-    status_update = pyqtSignal(str)
-    box_completed = pyqtSignal()
-    log_message = pyqtSignal(str)
-    
-    def __init__(self, active_resolution):
-        super().__init__()
-        self.active_resolution = active_resolution
-        self.running = True
-        self.green_color = colors.color["light_green"]
-        
-    def run(self):
-        while self.running:
+        while self.is_running:
             try:
-                # Получаем координаты для активного разрешения из coordinates.py
-                if self.active_resolution in port_coordinate:
-                    coords = port_coordinate[self.active_resolution].get("port_marker")
-                    if coords:
-                        if check_color(coordinates=coords, color=self.green_color):
-                            press_key("e", boundary=(0.06, 0.14))
-                            success_message = "Нажата клавиша E (обнаружен зелёный цвет)"
-                            print(success_message)
-                            self.status_update.emit(success_message)
-                            self.log_message.emit(success_message)
-                            self.box_completed.emit()
-                        else:
-                            # Логируем, что зелёный цвет не обнаружен
-                            self.log_message.emit("Зелёный цвет не обнаружен в координатах порта")
-                    else:
-                        self.log_message.emit(f"ВНИМАНИЕ: Координаты 'port_marker' не найдены для разрешения {self.active_resolution}")
-                else:
-                    self.log_message.emit(f"ОШИБКА: Разрешение {self.active_resolution} не найдено в конфигурации координат")
-                    
+                if self._resolution_mode in port_coordinate:
+                    coords = port_coordinate[self._resolution_mode].get("port_marker")
+                    if coords and check_color(coords, self._green_color):
+                        current_time = time.time()
+                        
+                        # Проверяем, прошло ли достаточно времени с последнего клика
+                        if current_time - self._last_click_time >= self._click_cooldown:
+                            press_key("e", boundary=PRESS_KEY_DURATION)
+                            self.log_message.emit("Нажата клавиша E (обнаружен зелёный цвет)")
+                            self.action_completed.emit()
+                            self._last_click_time = current_time
+                            
+                            # Небольшая дополнительная задержка, чтобы избежать повторного срабатывания
+                            time.sleep(0.05)
             except Exception as e:
-                error_message = f"ОШИБКА В РАБОЧЕМ ПОТОКЕ: {str(e)}"
-                self.log_message.emit(error_message)
-                
-            self.msleep(10)  # Проверка каждые 10 мс
+                self.log_message.emit(f"ОШИБКА: {e}")
+            
+            self.msleep(10)
+        
+        self.log_message.emit("Поток порта остановлен")
+
+
+class PortApp(BaseBotApp):
+    """Приложение для автоматизации порта"""
     
-    def stop(self):
-        self.running = False
-        self.log_message.emit("Рабочий поток остановлен")
-
-class PortApp(QWidget):
     def __init__(self):
-        super().__init__()
-        self.running = False
-        self.worker_thread = None
-        self.active_resolution = "FullHD"
+        # Сначала создаем атрибуты
+        self._auto_run_checkbox = None
+        self._f7_shortcut = None
+        self._f8_shortcut = None
+        self._autorun_status = None
+        self._status_timer = None
         
-        # Инициализируем окна
-        self.counter_window = CounterWindow()
-        self.log_window = LogWindow()
+        # Состояние автобега
+        self._autorun_enabled = False
+        self._autorun_thread = None
+        self._autorun_stop = False
         
-        self.initUI()
-
-        self.load_settings()
+        # Для глобальных хуков
+        self._global_listener = None
+        self._hook_thread = None
         
-        # Создаем и запускаем менеджер автобега после инициализации UI
-        self.auto_run_manager = AutoRunManager(
-            checkbox=self.auto_run_checkbox,
-            counter_window=self.counter_window
+        # Вызываем родительский __init__
+        super().__init__(
+            title="Порт",
+            window_width=550,
+            window_height=500,
+            has_resolution=True,
+            has_delay=False,
+            has_log=True,
+            has_counter=True
         )
-        self.auto_run_manager.start(log_callback=self.add_log)
         
-    def initUI(self):
-        # Настройка окна
-        self.setWindowTitle("Порт")
-        self.setFixedSize(550, 500)
-        self.setStyleSheet(WINDOW_STYLES["main_window"])
+        # Запускаем таймер синхронизации после создания UI
+        self._status_timer = QTimer()
+        self._status_timer.timeout.connect(self._sync_ui_state)
+        self._status_timer.start(500)
         
-        # Основной вертикальный layout
-        main_layout = QVBoxLayout()
-        main_layout.setContentsMargins(20, 20, 20, 20)
-        main_layout.setSpacing(15)
+        # Устанавливаем глобальные хуки
+        self._setup_global_hooks()
+    
+    def _setup_global_hooks(self):
+        """Устанавливает глобальные хуки на F7 и F8"""
+        if not KEYBOARD_AVAILABLE:
+            self._add_log("⚠️ Для работы F7/F8 вне фокуса установите: pip install pynput")
+            return
         
-        # Строка состояния
-        self.status_label = QLabel("Состояние: не активно")
-        self.status_label.setStyleSheet(LABEL_STYLES["primary"])
-        self.status_label.setAlignment(Qt.AlignCenter)
-        main_layout.addWidget(self.status_label)
+        try:
+            if KEYBOARD_LIB == "pynput":
+                self._setup_pynput_hooks()
+            elif KEYBOARD_LIB == "keyboard":
+                self._setup_keyboard_hooks()
+        except Exception as e:
+            self._add_log(f"❌ Ошибка установки глобальных хуков: {e}")
+    
+    def _setup_pynput_hooks(self):
+        """Устанавливает хуки через pynput"""
+        def on_press(key):
+            try:
+                # Проверяем F7
+                if hasattr(key, 'vk') and key.vk == 0x76:  # VK_F7
+                    self._add_log("🔧 Обнаружено нажатие F7 (глобально)")
+                    QTimer.singleShot(0, self._start_autorun)
+                elif hasattr(key, 'vk') and key.vk == 0x77:  # VK_F8
+                    self._add_log("🔧 Обнаружено нажатие F8 (глобально)")
+                    QTimer.singleShot(0, self._stop_autorun)
+                # Альтернативный способ проверки
+                elif hasattr(key, 'name'):
+                    if key.name == 'f7':
+                        self._add_log("🔧 Обнаружено нажатие F7 (глобально)")
+                        QTimer.singleShot(0, self._start_autorun)
+                    elif key.name == 'f8':
+                        self._add_log("🔧 Обнаружено нажатие F8 (глобально)")
+                        QTimer.singleShot(0, self._stop_autorun)
+            except Exception as e:
+                self._add_log(f"Ошибка в обработчике клавиш: {e}")
         
-        # Фрейм для разрешения экрана
-        resolution_frame = QFrame()
-        resolution_frame.setStyleSheet(FRAME_STYLES["frame"])
-        resolution_layout = QVBoxLayout(resolution_frame)
-        resolution_layout.setContentsMargins(15, 10, 15, 10)
-        resolution_layout.setSpacing(5)
+        # Запускаем слушатель в отдельном потоке
+        self._global_listener = pynput_keyboard.Listener(on_press=on_press)
+        self._global_listener.daemon = True
+        self._global_listener.start()
+        self._add_log("✅ Глобальные слушатели F7/F8 запущены (через pynput)")
+    
+    def _setup_keyboard_hooks(self):
+        """Устанавливает хуки через keyboard (старый способ)"""
+        try:
+            import keyboard
+            keyboard.add_hotkey('f7', lambda: QTimer.singleShot(0, self._start_autorun))
+            keyboard.add_hotkey('f8', lambda: QTimer.singleShot(0, self._stop_autorun))
+            self._add_log("✅ Глобальные слушатели F7/F8 запущены (через keyboard)")
+        except Exception as e:
+            self._add_log(f"❌ Ошибка хуков keyboard: {e}")
+    
+    def _autorun_worker(self):
+        """Поток автобега - просто зажимает клавиши"""
+        self._add_log("🔧 Поток автобега запущен, зажимаем Shift+W")
+        INPUT_LIB.keyDown('shift')
+        time.sleep(0.05)
+        INPUT_LIB.keyDown('w')
         
-        # Заголовок
-        resolution_title = QLabel("Разрешение экрана:")
-        resolution_title.setStyleSheet(LABEL_STYLES["secondary"])
-        resolution_title.setAlignment(Qt.AlignCenter)
-        resolution_layout.addWidget(resolution_title)
+        while not self._autorun_stop:
+            time.sleep(0.5)
         
-        # Фрейм для кнопок разрешения
-        buttons_frame = QFrame()
-        buttons_frame.setStyleSheet(FRAME_STYLES["frame_inner"])
-        buttons_layout = QHBoxLayout(buttons_frame)
-        buttons_layout.setContentsMargins(10, 5, 10, 5)
+        INPUT_LIB.keyUp('w')
+        INPUT_LIB.keyUp('shift')
+        self._add_log("🔧 Поток автобега остановлен, клавиши отпущены")
+    
+    def _start_autorun(self):
+        """Включить автобег"""
+        self._add_log(f"🔧 _start_autorun вызван, текущее состояние: {self._autorun_enabled}")
         
-        # Кнопка FullHD
-        self.fullhd_button = QPushButton("FullHD")
-        self.fullhd_button.setStyleSheet(BUTTON_STYLES["primary_small"])
-        self.fullhd_button.clicked.connect(lambda: self.set_resolution("FullHD"))
-        buttons_layout.addWidget(self.fullhd_button)
+        if self._autorun_enabled:
+            self._add_log("ℹ️ Автобег уже включен")
+            return
         
-        # Кнопка QuadHD
-        self.quadhd_button = QPushButton("QuadHD")
-        self.quadhd_button.setStyleSheet(BUTTON_STYLES["secondary_small"])
-        self.quadhd_button.clicked.connect(lambda: self.set_resolution("QuadHD"))
-        buttons_layout.addWidget(self.quadhd_button)
+        self._autorun_enabled = True
+        self._autorun_stop = False
+        self._autorun_thread = threading.Thread(target=self._autorun_worker, daemon=True)
+        self._autorun_thread.start()
         
-        resolution_layout.addWidget(buttons_frame)
+        self._add_log("✅ Автобег ВКЛЮЧЕН (Shift + W зажаты)")
+        self._update_autorun_status()
         
-        # Метка текущего разрешения
-        self.resolution_label = QLabel(f"Текущее: {self.active_resolution}")
-        self.resolution_label.setStyleSheet(LABEL_STYLES["muted"])
-        self.resolution_label.setAlignment(Qt.AlignCenter)
-        resolution_layout.addWidget(self.resolution_label)
+        # Синхронизируем чекбокс
+        if self._auto_run_checkbox:
+            self._auto_run_checkbox.blockSignals(True)
+            self._auto_run_checkbox.setChecked(True)
+            self._auto_run_checkbox.blockSignals(False)
+    
+    def _stop_autorun(self):
+        """Выключить автобег"""
+        self._add_log(f"🔧 _stop_autorun вызван, текущее состояние: {self._autorun_enabled}")
         
-        main_layout.addWidget(resolution_frame)
+        if not self._autorun_enabled:
+            self._add_log("ℹ️ Автобег уже выключен")
+            return
         
-        # Фрейм для автобега
+        self._autorun_enabled = False
+        self._autorun_stop = True
+        
+        if self._autorun_thread:
+            self._autorun_thread.join(timeout=1.0)
+            self._autorun_thread = None
+        
+        INPUT_LIB.keyUp('w')
+        INPUT_LIB.keyUp('shift')
+        
+        self._add_log("✅ Автобег ВЫКЛЮЧЕН")
+        self._update_autorun_status()
+        
+        # Синхронизируем чекбокс
+        if self._auto_run_checkbox:
+            self._auto_run_checkbox.blockSignals(True)
+            self._auto_run_checkbox.setChecked(False)
+            self._auto_run_checkbox.blockSignals(False)
+    
+    def _sync_ui_state(self):
+        """Синхронизирует UI с состоянием автобега"""
+        if self._auto_run_checkbox:
+            current = self._auto_run_checkbox.isChecked()
+            if current != self._autorun_enabled:
+                self._auto_run_checkbox.blockSignals(True)
+                self._auto_run_checkbox.setChecked(self._autorun_enabled)
+                self._auto_run_checkbox.blockSignals(False)
+        
+        self._update_autorun_status()
+    
+    def _update_autorun_status(self):
+        """Обновляет статус автобега в UI"""
+        if not self._autorun_status:
+            return
+        
+        if self._autorun_enabled:
+            self._autorun_status.setText("● Автобег ВКЛЮЧЕН")
+            self._autorun_status.setStyleSheet("color: #4CAF50; font-size: 11px; font-weight: bold;")
+        else:
+            self._autorun_status.setText("● Автобег выключен")
+            self._autorun_status.setStyleSheet("color: #888888; font-size: 11px;")
+    
+    def _add_custom_settings(self, parent_layout: QVBoxLayout) -> None:
+        """Добавляет фрейм автобега"""
         auto_run_frame = QFrame()
         auto_run_frame.setStyleSheet(FRAME_STYLES["frame"])
-        auto_run_layout = QHBoxLayout(auto_run_frame)
+        auto_run_layout = QVBoxLayout(auto_run_frame)
         auto_run_layout.setContentsMargins(15, 10, 15, 10)
-        auto_run_layout.setSpacing(10)
         
-        # Чекбокс для автобега
-        self.auto_run_checkbox = QCheckBox("Автобег (Shift+W)")
-        self.auto_run_checkbox.setStyleSheet(CHECKBOX_STYLES["standard"])
-        self.auto_run_checkbox.stateChanged.connect(self.toggle_auto_run)
-        auto_run_layout.addWidget(self.auto_run_checkbox)
+        # Чекбокс с горячей клавишей
+        checkbox_layout = QHBoxLayout()
+        self._auto_run_checkbox = QCheckBox("Автобег (Shift + W)")
+        self._auto_run_checkbox.setStyleSheet(CHECKBOX_STYLES["standard"])
+        self._auto_run_checkbox.stateChanged.connect(self._on_auto_run_toggled)
+        checkbox_layout.addWidget(self._auto_run_checkbox)
         
-        # Подпись для горячей клавиши
-        hotkey_label = QLabel("(Вкл/Выкл: F7)")
-        hotkey_label.setStyleSheet(LABEL_STYLES["muted"])
-        auto_run_layout.addWidget(hotkey_label)
+        # Индикаторы горячих клавиш
+        hotkeys_layout = QHBoxLayout()
         
-        auto_run_layout.addStretch()
-        main_layout.addWidget(auto_run_frame)
-
-        # Фрейм для кнопок управления
-        control_frame = QFrame()
-        control_frame.setStyleSheet(FRAME_STYLES["frame"])
-        control_layout = QHBoxLayout(control_frame)
-        control_layout.setContentsMargins(20, 10, 20, 10)
-        control_layout.setSpacing(20)
+        f7_label = QLabel("F7 (включить)")
+        f7_label.setStyleSheet("""
+            QLabel {
+                background-color: #3c3c3c;
+                color: #4CAF50;
+                font-weight: bold;
+                padding: 2px 8px;
+                border-radius: 4px;
+                font-size: 11px;
+                font-family: monospace;
+            }
+        """)
         
-        # Кнопка Запустить/Остановить
-        self.toggle_button = QPushButton("Запустить")
-        self.toggle_button.setStyleSheet(BUTTON_STYLES["primary"])
-        self.toggle_button.clicked.connect(self.toggle_task)
-        control_layout.addWidget(self.toggle_button, alignment=Qt.AlignCenter)
+        f8_label = QLabel("F8 (выключить)")
+        f8_label.setStyleSheet("""
+            QLabel {
+                background-color: #3c3c3c;
+                color: #ff6b6b;
+                font-weight: bold;
+                padding: 2px 8px;
+                border-radius: 4px;
+                font-size: 11px;
+                font-family: monospace;
+            }
+        """)
         
-        main_layout.addWidget(control_frame)
-
-        info_label = QLabel("Бот будет нажимать E при обнаружении зелёного цвета в указанных координатах")
+        hotkeys_layout.addWidget(f7_label)
+        hotkeys_layout.addWidget(f8_label)
+        hotkeys_layout.addStretch()
+        
+        auto_run_layout.addLayout(checkbox_layout)
+        auto_run_layout.addLayout(hotkeys_layout)
+        
+        # Статус автобега
+        self._autorun_status = QLabel("● Автобег выключен")
+        self._autorun_status.setStyleSheet("color: #888888; font-size: 11px;")
+        self._autorun_status.setAlignment(Qt.AlignCenter)
+        auto_run_layout.addWidget(self._autorun_status)
+        
+        parent_layout.addWidget(auto_run_frame)
+        
+        # Информационная метка о боте
+        info_label = QLabel("Бот будет нажимать E при обнаружении зелёного цвета")
         info_label.setStyleSheet(LABEL_STYLES["muted"])
         info_label.setAlignment(Qt.AlignCenter)
         info_label.setWordWrap(True)
-        main_layout.addWidget(info_label)
-
-        # Кнопка управления окном счетчика
-        self.counter_btn = QPushButton("Показать счётчик")
-        self.counter_btn.setStyleSheet(BUTTON_STYLES["accent_small"])
-        self.counter_btn.clicked.connect(self.toggle_counter_window)
-        main_layout.addWidget(self.counter_btn, alignment=Qt.AlignCenter)
+        parent_layout.addWidget(info_label)
         
-        # Кнопка управления окном логов
-        log_btn_layout = QHBoxLayout()
-        log_btn_layout.addStretch()
+        # QShortcut для F7 и F8 (когда окно в фокусе)
+        self._f7_shortcut = QShortcut(QKeySequence("F7"), self)
+        self._f7_shortcut.activated.connect(self._start_autorun)
         
-        self.log_btn = QPushButton("Показать логи")
-        self.log_btn.setStyleSheet(BUTTON_STYLES["log_button"])
-        self.log_btn.clicked.connect(self.toggle_log_window)
-        log_btn_layout.addWidget(self.log_btn)
+        self._f8_shortcut = QShortcut(QKeySequence("F8"), self)
+        self._f8_shortcut.activated.connect(self._stop_autorun)
         
-        main_layout.addLayout(log_btn_layout)
-        
-        self.setLayout(main_layout)
-        
-    def toggle_auto_run(self, state):
-        """Включает/выключает автобег через чекбокс"""
-        self.auto_run_manager.set_state(state == Qt.Checked)
-        
-    def toggle_counter_window(self):
-        """Показать/скрыть окно счетчика"""
-        if self.counter_window.isVisible():
-            self.counter_window.hide()
-            self.counter_btn.setText("Показать счётчик")
-            self.add_log("Счётчик скрыт (продолжает считать)")
+        # Информация о библиотеке
+        if not KEYBOARD_AVAILABLE:
+            warn_label = QLabel("⚠️ Для работы F7/F8 вне фокуса установите: pip install pynput")
+            warn_label.setStyleSheet("color: #ff9800; font-size: 10px; padding: 2px;")
+            warn_label.setAlignment(Qt.AlignCenter)
+            parent_layout.addWidget(warn_label)
         else:
-            self.counter_window.show()
-            self.counter_window.move_to_top_right()
-            self.counter_btn.setText("Скрыть счётчик")
-            self.add_log("Счётчик показан")
+            info_label = QLabel(f"✓ Глобальные хуки активны (используется {KEYBOARD_LIB})")
+            info_label.setStyleSheet("color: #4CAF50; font-size: 10px; padding: 2px;")
+            info_label.setAlignment(Qt.AlignCenter)
+            parent_layout.addWidget(info_label)
     
-    def toggle_log_window(self):
-        """Показать/скрыть окно логов"""
-        if self.log_window.isVisible():
-            self.log_window.hide()
-            self.log_btn.setText("Показать логи")
-        else:
-            self.log_window.show()
-            # Позиционируем окно логов в правом нижнем углу
-            screen_geometry = QApplication.desktop().availableGeometry()
-            x = screen_geometry.width() - self.log_window.width() - 20
-            y = screen_geometry.height() - self.log_window.height() - 20
-            self.log_window.move(x, y)
-            self.log_btn.setText("Скрыть логи")
+    def _on_auto_run_toggled(self, state: int):
+        """Обработчик чекбокса автобега"""
+        enabled = (state == Qt.Checked)
+        
+        if enabled != self._autorun_enabled:
+            if enabled:
+                self._start_autorun()
+            else:
+                self._stop_autorun()
     
-    def toggle_task(self):
-        if self.running:
-            self.stop_task()
-        else:
-            self.start_task()
+    def _get_counter_text(self) -> str:
+        return "Коробок:"
     
-    def start_task(self):
-        self.running = True
-        self.toggle_button.setText("Остановить")
-        self.toggle_button.setStyleSheet(BUTTON_STYLES["danger"])
-        self.status_label.setText("Состояние: Активно")
-        
-        # Сбрасываем счетчик при запуске
-        self.counter_window.reset_counter()
-        
-        # Добавляем запись в лог о начале работы
-        self.add_log(f"Запуск работы порта. Разрешение: {self.active_resolution}")
-        
-        # Создаем и запускаем рабочий поток
-        self.worker_thread = WorkerThread(self.active_resolution)
-        self.worker_thread.status_update.connect(self.update_status)
-        self.worker_thread.box_completed.connect(self.increment_counter)
-        self.worker_thread.log_message.connect(self.add_log)
-        self.worker_thread.start()
+    def _create_worker(self) -> Optional[BaseWorker]:
+        return PortWorker(self._resolution_mode)
     
-    def stop_task(self):
-        self.running = False
-        self.toggle_button.setText("Запустить")
-        self.toggle_button.setStyleSheet(BUTTON_STYLES["primary"])
-        self.status_label.setText("Состояние: Не активно")
+    def _start_bot(self) -> None:
+        """Запускает бота"""
+        super()._start_bot()
         
-        # Добавляем запись в лог об остановке
-        self.add_log("Остановка работы порта")
-        
-        # Останавливаем рабочий поток
-        if self.worker_thread:
-            self.worker_thread.stop()
-            self.worker_thread.wait()
-            self.worker_thread = None
+        self._worker = self._create_worker()
+        if self._worker:
+            self._worker.action_completed.connect(self._increment_counter)
+            self._worker.log_message.connect(self._add_log)
+            self._worker.status_updated.connect(self._update_status)
+            self._worker.start()
+            self._add_log(f"Запуск порта. Разрешение: {self._resolution_mode}")
     
-    def increment_counter(self):
-        """Увеличивает счетчик в отдельном окне"""
-        self.counter_window.increment_counter()
-        # Добавляем запись в лог о счетчике
-        current_count = self.counter_window.counter
-        self.add_log(f"Счётчик коробок: {current_count}")
-    
-    def set_resolution(self, resolution):
-        self.active_resolution = resolution
-        
-        # Обновляем состояние кнопок
-        if resolution == "FullHD":
-            self.fullhd_button.setStyleSheet(BUTTON_STYLES["primary_small"].replace(
-                "background-color: #2196F3;", "background-color: #4CAF50;"
-            ).replace(
-                "QPushButton:hover {", "QPushButton:hover { background-color: #45a049;"
-            ))
-            self.quadhd_button.setStyleSheet(BUTTON_STYLES["secondary_small"])
-        else:
-            self.fullhd_button.setStyleSheet(BUTTON_STYLES["secondary_small"])
-            self.quadhd_button.setStyleSheet(BUTTON_STYLES["primary_small"].replace(
-                "background-color: #2196F3;", "background-color: #4CAF50;"
-            ).replace(
-                "QPushButton:hover {", "QPushButton:hover { background-color: #45a049;"
-            ))
-        
-        self.resolution_label.setText(f"Текущее: {resolution}")
-        
-        # Добавляем запись в лог об изменении разрешения
-        self.add_log(f"Изменено разрешение на: {resolution}")
-        
-        # Если поток запущен, обновляем разрешение в нем
-        if self.worker_thread and self.worker_thread.isRunning():
-            self.worker_thread.active_resolution = resolution
-    
-    def update_status(self, message):
-        """Обновляет статус (может использоваться для отладки)"""
-        pass
-    
-    def add_log(self, message):
-        """Добавляет сообщение в окно логов"""
-        self.log_window.add_log(message)
-
-    def load_settings(self):
+    def _load_settings(self) -> None:
         """Загружает сохраненные настройки"""
-        self.active_resolution = config.get("port", "resolution_mode", "FullHD")
+        self._resolution_mode = config.get("port", "resolution_mode", "FullHD")
         auto_run = config.get("port", "auto_run", False)
         
-        self.set_resolution(self.active_resolution)
-        self.auto_run_checkbox.setChecked(auto_run)
+        self._set_resolution(self._resolution_mode)
         
-        # Загружаем состояние счетчика
+        if self._auto_run_checkbox:
+            self._auto_run_checkbox.setChecked(auto_run)
+            if auto_run:
+                self._start_autorun()
+        
         counter_visible = config.get("port", "counter_visible", False)
-        if counter_visible:
-            self.counter_window.show()
-            self.counter_btn.setText("Скрыть счётчик")
-        else:
-            self.counter_window.hide()
-            self.counter_btn.setText("Показать счётчик")
-
-    def save_settings(self):
+        if counter_visible and self._counter_window and self._counter_btn:
+            self._counter_window.show()
+            self._counter_btn.setText("Скрыть счётчик")
+    
+    def _save_settings(self) -> None:
         """Сохраняет текущие настройки"""
         config.set_multiple("port", {
-            "resolution_mode": self.active_resolution,
-            "auto_run": self.auto_run_checkbox.isChecked(),
-            "counter_visible": self.counter_window.isVisible()
+            "resolution_mode": self._resolution_mode,
+            "auto_run": self._autorun_enabled,
+            "counter_visible": self._counter_window.isVisible() if self._counter_window else False
         })
     
-    def closeEvent(self, event):
+    def closeEvent(self, event) -> None:
         """Обработчик закрытия окна"""
-        self.save_settings()
-        # Гарантируем остановку потока при закрытии окна
-        if self.running:
-            self.stop_task()
+        if self._status_timer:
+            self._status_timer.stop()
         
-        # Останавливаем автобег при закрытии
-        if hasattr(self, 'auto_run_manager'):
-            self.auto_run_manager.cleanup()
+        self._stop_autorun()
         
-        # Закрываем окно счетчика
-        self.counter_window.close()
+        # Останавливаем глобальный слушатель
+        if self._global_listener:
+            try:
+                self._global_listener.stop()
+            except:
+                pass
         
-        # Закрываем окно логов
-        self.log_window.close()
+        if self._f7_shortcut:
+            self._f7_shortcut.activated.disconnect()
         
-        event.accept()
+        if self._f8_shortcut:
+            self._f8_shortcut.activated.disconnect()
+        
+        super().closeEvent(event)
+
 
 def main():
     app = QApplication(sys.argv)
-    port_app = PortApp()
-    port_app.show()
+    window = PortApp()
+    window.show()
     sys.exit(app.exec_())
+
 
 if __name__ == "__main__":
     main()
