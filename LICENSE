@@ -1,0 +1,128 @@
+# Non-Commercial Open Source License (NC-OSL)
+**Version 1.0 — June 2026**
+
+Copyright (c) 2026 Raktoperk
+
+## Summary (Human-Readable)
+
+You CAN:
+- Use the Software for personal, educational, academic, and non-profit purposes.
+- Modify the source code and create derivative works.
+- Distribute the Software and derivative works to others.
+- Use the Software internally within a company for development tooling (provided the Software itself is not the product being sold).
+
+You CANNOT:
+- Sell the Software or any derivative work.
+- Include the Software in a commercial product or service.
+- Offer the Software as a paid hosted service (SaaS).
+- Remove or alter this license from any distribution.
+
+You MUST:
+- Include this license in all copies and derivative works.
+- License all derivative works under this same license.
+- Provide attribution to the original project.
+- Make the source code of any derivative work publicly available.
+
+## Terms and Conditions
+
+### 1. Definitions
+
+**"Software"** means the source code, documentation, configuration files, build scripts, test suites, and all associated files contained in this repository.
+
+**"Derivative Work"** means any work that is based on, incorporates, modifies, extends, or is built using substantial portions of the Software. This includes but is not limited to: forks, modified versions, plugins that depend on the Software's internal APIs, and applications that embed the Software as a component.
+
+**"Commercial Use"** means any use of the Software or a Derivative Work that is primarily intended for or directed toward commercial advantage or monetary compensation. This includes but is not limited to:
+
+  (a) Selling or licensing the Software or any Derivative Work for a fee.
+
+  (b) Including the Software or any Derivative Work as a component of a product or service that is sold, licensed, or offered for a fee.
+
+  (c) Offering the Software or any Derivative Work as a hosted service (Software-as-a-Service), whether for a fee or supported by advertising revenue.
+
+  (d) Using the Software or any Derivative Work to provide paid consulting, development, or support services where the Software is the primary deliverable.
+
+**"Internal Use"** means use of the Software within an organization for the organization's own development processes, where the Software itself is not part of a product or service offered to third parties. Internal Use is NOT considered Commercial Use.
+
+**"Non-Commercial Use"** means any use that is not Commercial Use. This includes personal use, educational use, academic research, use by non-profit organizations, and Internal Use.
+
+### 2. Grant of License
+
+Subject to the terms of this License, the copyright holders grant you a worldwide, royalty-free, non-exclusive license to:
+
+  (a) **Use** the Software for any Non-Commercial Use.
+
+  (b) **Copy** and **distribute** the Software in source or compiled form, provided that all copies include this License and copyright notice.
+
+  (c) **Modify** the Software and create Derivative Works, provided that all Derivative Works are licensed under this same License.
+
+  (d) **Distribute** Derivative Works in source or compiled form, provided that:
+      - The Derivative Work includes this License and copyright notice
+      - The complete source code of the Derivative Work is made publicly available at no charge
+      - The Derivative Work clearly states what modifications were made and identifies the original Software
+
+### 3. Non-Commercial Restriction
+
+**Commercial Use of the Software or any Derivative Work is strictly prohibited** without prior written permission from the copyright holders.
+
+Any Derivative Work must include this non-commercial restriction. You may not re-license the Software or any Derivative Work under terms that permit Commercial Use.
+
+### 4. Copyleft (Share-Alike) Requirement
+
+All Derivative Works must be licensed under this same License. You may not distribute a Derivative Work under different license terms, whether more permissive or more restrictive, without prior written permission from the copyright holders.
+
+This ensures that:
+- All improvements, features, and bug fixes remain freely available
+- No one can take the Software proprietary
+- The community benefits from all contributions
+
+### 5. Source Code Availability
+
+If you distribute the Software or any Derivative Work in compiled form, you must also make the complete corresponding source code available at no charge through a publicly accessible repository or download.
+
+"Complete corresponding source code" includes all source files needed to build, modify, and run the Software or Derivative Work, including build scripts, configuration files, and documentation.
+
+### 6. Attribution
+
+All copies and Derivative Works must include:
+
+  (a) This License in its entirety.
+
+  (b) The original copyright notice.
+
+  (c) A prominent notice stating that the work is derived from the original project, with a link to the original repository.
+
+### 7. Internal Use Clarification
+
+Using the Software as a development tool within an organization is permitted, even in a commercial organization, provided that:
+
+  (a) The Software itself is not included in any product or service offered to third parties.
+
+  (b) The Software is not offered as a hosted service to third parties.
+
+  (c) The organization does not charge others for access to the Software.
+
+**Example of permitted Internal Use:** A software company installs the Software to help its developers with their work. The company sells its own products, but the Software is an internal tool — not part of what they sell.
+
+**Example of prohibited Commercial Use:** A company packages the Software into a cloud-based platform and charges customers for access.
+
+**Example of prohibited Commercial Use:** A consulting firm sells "powered by the Software" services, where the Software is the primary tool delivering the value.
+
+### 8. No Warranty
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+### 9. Termination
+
+This License and the rights granted hereunder will terminate automatically if you fail to comply with any of its terms. Upon termination, you must cease all use and distribution of the Software and destroy all copies in your possession.
+
+### 10. Commercial Licensing
+
+If you wish to use the Software or a Derivative Work for Commercial Use, you must obtain a separate commercial license from the copyright holders. Contact the project maintainers for commercial licensing inquiries.
+
+### 11. Severability
+
+If any provision of this License is held to be unenforceable, the remaining provisions shall remain in full force and effect.
+
+### 12. Governing Law
+
+This License shall be governed by and construed in accordance with applicable copyright law and international treaties.
