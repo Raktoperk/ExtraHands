@@ -4,7 +4,7 @@
 
 [![Latest Release](https://img.shields.io/github/v/release/Raktoperk/ExtraHands?label=Версия&color=brightgreen)](https://github.com/Raktoperk/ExtraHands/releases)
 [![Всего загрузок](https://img.shields.io/github/downloads/Raktoperk/ExtraHands/total?label=Загрузки&color=blue)](https://github.com/Raktoperk/ExtraHands/releases)
-[![Platform](https://img.shields.io/badge/Платформа-Windows-blue.svg)](https://www.microsoft.com/windows)
+[![Platform](https://img.shields.io/badge/Платформа-Windows-orange.svg)](https://www.microsoft.com/windows)
 [![License](https://img.shields.io/badge/Лицензия-NC--OSL-red.svg)](./LICENSE)
 
 
